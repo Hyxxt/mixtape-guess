@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const icon = name => '<svg aria-hidden="true"><use href="#'+name+'"/></svg>';
 const pad = value => String(value).padStart(2, "0");
-const roundSize = 5, historyKey = "blind-test-fm.history.v1";
+const roundSize = 5, historyKey = "blind-test-fm.eason.history.v1";
 let songs, index, points, answered, completed, buffer, generation = 0, pending = false, frame;
 let historyLog = [];
 try {
@@ -110,7 +110,7 @@ function showModal(html) {
   if(!$("modal").open) $("modal").showModal();
 }
 function showResults() {
-  showModal('<h2>本局成绩</h2><div class="bigscore">'+points+' <small>/ 500 分</small></div><p>五首旋律里，你猜中了 '+points/100+' 首。</p><button class="resultbtn" id="again">再来一局</button>');
+  showModal('<h2>陈奕迅专场成绩</h2><div class="bigscore">'+points+' <small>/ 500 分</small></div><p>五首旋律里，你猜中了 '+points/100+' 首。</p><button class="resultbtn" id="again">再来一局</button>');
   $("again").onclick = () => {$("modal").close();startRound();$("playBtn").focus();};
 }
 $("playBtn").onclick = play;
@@ -122,12 +122,11 @@ $("muteBtn").onclick = () => {
 };
 $("history").onclick = () => {
   const rows = historyLog.map(r=>'<div class="logrow"><span>'+new Date(r.time).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})+'</span><span>猜中 '+r.right+'/5 首</span><b>'+r.right*100+' 分</b></div>').join("");
-  showModal("<h2>我的战绩</h2>"+(rows ? "<p>本机最近的 "+historyLog.length+" 局挑战</p>"+rows : "<p>还没有完成的挑战。猜完五首后，你的第一条战绩就会出现在这里。</p>"));
+  showModal("<h2>陈奕迅专场战绩</h2>"+(rows ? "<p>本机最近的 "+historyLog.length+" 局挑战</p>"+rows : "<p>还没有完成的挑战。猜完五首后，你的第一条战绩就会出现在这里。</p>"));
 };
-$("helpBtn").onclick = () => showModal('<h2>玩法说明</h2><ol><li>点击「播放片段」，听一段 10 秒的经典旋律，可暂停或重听。</li><li>从四个歌名中选出答案。每题只能作答一次，猜对得 100 分，跳过得 0 分。</li><li>每局随机抽取五首，满分 500 分。完成后可在「我的战绩」回顾成绩。</li></ol>');
+$("helpBtn").onclick = () => showModal('<h2>玩法说明</h2><ol><li>点击「播放片段」，听一段 10 秒的陈奕迅歌曲钢琴片段，可暂停或重听。</li><li>从四个歌名中选出答案。每题只能作答一次，猜对得 100 分，跳过得 0 分。</li><li>每局随机抽取五首，满分 500 分。完成后可在「我的战绩」回顾成绩。</li></ol>');
 $("lobby").onclick = () => {if($("modal").open) $("modal").close();$("game").scrollIntoView({block:"nearest"});};
 $("close").onclick = () => $("modal").close();
 $("modal").addEventListener("click",event => {if(event.target === $("modal")) {const r = $("modal").getBoundingClientRect(); if(event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) $("modal").close();}});
 document.addEventListener("visibilitychange",()=>{if(document.hidden && voice){stopAudio(false);updatePlayer();}});
 startRound();
-
