@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ccfa60">
+<meta name="description" content="在猜歌电台听十秒旋律，从四首歌中选出答案，看看五首能猜中几首。">
+<title>猜歌电台 · 猜歌挑战</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23cbfa60'/%3E%3Cpath d='M8 17v6m6-13v20m6-16v12m6-18v24m6-16v8' fill='none' stroke='%23171717' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg aria-hidden="true" class="symbols" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="wave" viewBox="0 0 24 24"><path d="M2 10v4m5-9v14m5-11v8m5-14v20m5-13v6"/></symbol>
+<symbol id="radio" viewBox="0 0 24 24"><rect x="2" y="8" width="20" height="13" rx="3"/><path d="m5 8 13-6M6 12h12"/><circle cx="7" cy="16.5" r="1.3"/><path d="M12 16h6"/></symbol>
+<symbol id="bars" viewBox="0 0 24 24"><path d="M4 20V11h4v9zm6 0V4h4v16zm6 0v-7h4v7z"/></symbol>
+<symbol id="help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.6a2.5 2.5 0 0 1 5 .2c0 2-2.6 2.1-2.6 4m0 2.8h.01"/></symbol>
+<symbol id="phones" viewBox="0 0 24 24"><path d="M3 15v-3a9 9 0 0 1 18 0v3"/><rect x="3" y="12" width="4.5" height="8" rx="2"/><rect x="16.5" y="12" width="4.5" height="8" rx="2"/></symbol>
+<symbol id="bolt" viewBox="0 0 24 24"><path d="m14 2-10 12h7l-1 8 10-13h-7z"/></symbol>
+<symbol id="signal" viewBox="0 0 24 24"><path d="M5 19a10 10 0 0 1 0-14m3 11a6 6 0 0 1 0-8m11 11a10 10 0 0 0 0-14m-3 11a6 6 0 0 0 0-8"/><circle cx="12" cy="12" r="1.5"/></symbol>
+<symbol id="vol" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zm13-1c2 2 2 6 0 8m3-11c4 4 4 10 0 14"/></symbol>
+<symbol id="mute" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zm13 0 6 6m0-6-6 6"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="stack" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5-10 5zm1 5 9 5 9-5m-18 5 9 4 9-4"/></symbol>
+<symbol id="play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z" fill="currentColor" stroke-linejoin="round"/></symbol>
+<symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14m8-14v14" stroke-width="5"/></symbol>
+<symbol id="repeat" viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 1 6M4 4v7h7"/></symbol>
+<symbol id="skip" viewBox="0 0 24 24"><path d="m5 5 11 7-11 7zm14 0v14"/></symbol>
+</defs></svg>
+<header><div class="navwrap">
+<a href="./" class="brand" aria-label="猜歌电台首页"><b class="brandmark"><svg><use href="#wave"/></svg></b>猜歌电台</a>
+<nav aria-label="主导航"><button class="navbtn active" id="lobby"><svg><use href="#radio"/></svg>猜歌大厅</button><button class="navbtn" id="history"><svg><use href="#bars"/></svg>我的战绩</button></nav>
+<button class="help" id="helpBtn"><svg><use href="#help"/></svg>玩法说明</button>
+</div></header>
+<main>
+<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img src="boombox.webp" alt=""><span class="sticker">ON AIR</span></div>
+<div class="herocopy"><span class="edition"><svg><use href="#signal"/></svg> BLIND TEST FM</span><h1 id="headline">听前奏，猜歌名<span>。</span></h1><p>戴上耳机，听一段熟悉的旋律。五首歌，你能猜中几首？</p><div class="tags"><span><svg><use href="#stack"/></svg>每局 5 首</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
+<section id="game" aria-label="经典挑战"><div class="sectionhead"><h2><span class="sectionicon"><svg><use href="#bolt"/></svg></span>经典挑战</h2><div class="score"><span>本局得分</span><strong id="points">000</strong><span>分</span></div></div>
+<div class="cards">
+<article class="player panel"><div class="cardhead"><span class="eyebrow"><i></i> AUDIO PLAYER</span><span class="track" id="track"></span></div>
+<h3 id="mystery"></h3>
+<div class="soundstage"><div class="stagehead"><span><i></i> <b id="status">READY</b></span><span>STEREO</span></div>
+<div class="waveform" aria-hidden="true" id="waveform"></div><div class="timeline"><span id="elapsed">00:00</span><span>00:10</span></div></div>
+<div class="transport"><button id="playBtn" class="primary"></button><button id="muteBtn" class="soundbtn" aria-label="静音" title="静音"><svg><use href="#vol"/></svg></button></div></article>
+<article class="choices panel"><div class="cardhead"><span class="eyebrow"><i></i> GUESS THE SONG</span><span class="choicetag">四选一</span></div><h3>这是哪首歌？</h3><div id="options"></div><div id="answerFoot"><span id="feedback" role="status">听完片段，选出你的答案。</span><button id="skipBtn" class="textbtn">跳过此题<svg><use href="#skip"/></svg></button></div></article>
+</div></section>
+<footer><span><svg><use href="#phones"/></svg>佩戴耳机，听得更清楚</span><span>BLIND TEST FM <b>✳</b></span></footer>
+</main>
+<dialog id="modal"><div class="modalhead"><span class="eyebrow"><i></i> BLIND TEST FM</span><button id="close" aria-label="关闭">×</button></div><div id="modalContent"></div></dialog>
+<script src="music.js"></script><script src="game.js"></script>
+</body></html>
