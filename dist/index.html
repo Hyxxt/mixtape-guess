@@ -6,7 +6,7 @@
 <meta name="description" content="听十秒陈奕迅原唱，从四个歌名中找出陈奕迅的歌。">
 <title>陈奕迅专场 · 猜歌电台</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23cbfa60'/%3E%3Cpath d='M8 17v6m6-13v20m6-16v12m6-18v24m6-16v8' fill='none' stroke='%23171717' stroke-width='3'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=rank1">
 </head>
 <body>
 <svg aria-hidden="true" class="symbols" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -28,13 +28,13 @@
 </defs></svg>
 <header><div class="navwrap">
 <a href="index.html" class="brand" aria-label="猜歌电台首页"><b class="brandmark"><svg><use href="#wave"/></svg></b>猜歌电台</a>
-<nav aria-label="主导航"><button class="navbtn active" id="lobby"><svg><use href="#radio"/></svg>猜歌大厅</button><button class="navbtn" id="history"><svg><use href="#bars"/></svg>我的战绩</button></nav>
-<button class="help" id="helpBtn"><svg><use href="#help"/></svg>玩法说明</button>
+<nav aria-label="主导航"><button class="navbtn active" id="lobby"><svg><use href="#radio"/></svg>猜歌大厅</button><button class="navbtn" id="history"><svg><use href="#bars"/></svg>我的战绩</button><button class="navbtn" id="board"><svg><use href="#bolt"/></svg>排行榜</button></nav>
+<button id="profile" class="help profile"><span data-label>游客参赛</span></button><button class="help" id="helpBtn"><svg><use href="#help"/></svg>玩法说明</button>
 </div></header>
 <main>
-<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img src="boombox.webp" alt=""><span class="sticker">EASON FM</span></div>
-<div class="herocopy"><span class="edition"><svg><use href="#signal"/></svg> EASON CHAN · 原唱专场</span><h1 id="headline">陈奕迅专场</h1><p>从《单车》到《孤勇者》，只听十秒原唱，你能认出几首？</p><div class="tags"><span><svg><use href="#stack"/></svg>8 首选曲 · 每局 5 首</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
-<section id="game" aria-label="听曲猜歌"><div class="sectionhead"><h2><span class="sectionicon"><svg><use href="#bolt"/></svg></span>听曲猜歌</h2><div class="score"><span>本局得分</span><strong id="points">000</strong><span>分</span></div></div>
+<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img width="1080" height="720" fetchpriority="high" src="boombox.webp" alt=""><span class="sticker">EASON FM</span></div>
+<div class="herocopy"><span class="edition"><svg><use href="#signal"/></svg> EASON CHAN · 原唱专场</span><h1 id="headline">陈奕迅专场</h1><p>听十秒陈奕迅原唱，猜得越快，得分越高。</p><div class="tags"><span><svg><use href="#stack"/></svg><b id="catalogCount">…</b> 首选曲 · 每局 <b id="roundCount">10</b> 题</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
+<section id="game" aria-label="听曲猜歌"><div class="sectionhead"><h2><span class="sectionicon"><svg><use href="#bolt"/></svg></span><span id="modeTitle">限时排名赛</span></h2><div class="modeSwitch" role="group" aria-label="玩法"><button id="ranked" aria-pressed="true">限时排名</button><button id="practice" aria-pressed="false">自由练习</button></div><div class="score"><span>本局得分</span><strong id="points">000</strong><span>分</span></div></div>
 <div class="cards">
 <article class="player panel"><div class="cardhead"><span class="eyebrow"><i></i> AUDIO PLAYER</span><span class="track" id="track"></span></div>
 <h3 id="mystery"></h3>
@@ -46,5 +46,5 @@
 <footer><span><svg><use href="#phones"/></svg>原唱试听来自 Deezer · 需联网</span><span>EASON CHAN FM <b>✳</b></span></footer>
 </main>
 <dialog id="modal"><div class="modalhead"><span class="eyebrow"><i></i> BLIND TEST FM</span><button id="close" aria-label="关闭">×</button></div><div id="modalContent"></div></dialog>
-<script src="music.js?v=vocal1"></script><script src="game.js?v=vocal1"></script>
+<script src="music.js?v=rank1"></script><script src="game.js?v=rank1"></script>
 </body></html>
