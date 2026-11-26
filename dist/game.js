@@ -139,6 +139,8 @@ function setModeUI() {
 function showHome() {
   document.body.classList.remove("in-game");
   setModeUI();newWave(0);
+  $("elapsed").textContent="00:00";
+  $("choiceEyebrowText").textContent="HOW TO PLAY";
   document.querySelector(".choices h3").textContent="计分规则";
   $("mystery").textContent=isRanked() ? "十秒猜歌挑战" : "原唱自由练习";
   $("status").textContent="READY";
@@ -203,6 +205,7 @@ function timedLoad(q,parent,priority="auto") {
 }
 function showQuestion(q) {
   document.body.classList.add("in-game");
+  $("choiceEyebrowText").textContent="GUESS THE SONG";
   document.querySelector(".choices h3").textContent="这是哪首歌？";
   question=q;currentResult=null;picked=null;activeAnswer=null;progress=0;startedAt=0;clip=null;phase="loading";
   stopClock();player.stop();setModeUI();newWave(q.index);
@@ -485,7 +488,7 @@ $("practice").onclick=()=>chooseMode("practice");
 $("board").onclick=showBoard;
 $("history").onclick=showHistory;
 $("profile").onclick=()=>profileForm();
-$("helpBtn").onclick=()=>showDialog("玩法说明",node("p","排名赛每局 10 题，每题限时 10 秒。第 1 秒内答对得 10 分，第 2 秒得 9 分，依次递减，第 10 秒得 1 分。答错、放弃和超时均为 0 分。"),node("p","原唱加载完毕才开始计时。排名赛播放后不能暂停或重听。练习模式可自由暂停、重听，成绩保存在本机。"));
+$("helpBtn").onclick=()=>showDialog("玩法说明",node("p","排名赛每局 10 题，每题限时 10 秒。第 1 秒内答对得 10 分，第 2 秒得 9 分，依次递减，第 10 秒得 1 分。答错、放弃和超时均为 0 分。"),node("p","原唱加载完毕才开始计时。排名赛播放后不能暂停或重听。练习模式可自由暂停、重听，成绩保存在本机。键盘可用：1-4 或 A-D 选答案，空格播放或重听，Enter 进下一题。"));
 $("muteBtn").onclick=()=>{
   const mute=player.toggleMute(), label=mute?"取消静音":"静音";
   $("muteBtn").innerHTML=icon(mute?"mute":"vol");$("muteBtn").setAttribute("aria-label",label);$("muteBtn").title=label;
@@ -498,6 +501,25 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden)pausePractice();
   else if(isRanked() && (phase==="scheduled"||phase==="live"))tick();
   scheduleAdvance();
+});
+document.addEventListener("keydown",event=>{
+  if(modal.open || event.metaKey || event.ctrlKey || event.altKey)return;
+  const target=event.target;
+  if(target && (target.tagName==="INPUT" || target.tagName==="TEXTAREA" || target.isContentEditable))return;
+  const key=event.key.toLowerCase();
+  if(phase==="live" || (!isRanked() && (phase==="ready" || phase==="paused"))){
+    const index={"1":0,"2":1,"3":2,"4":3,"a":0,"b":1,"c":2,"d":3}[key];
+    if(index!==undefined){
+      const list=buttons();
+      if(list[index] && !list[index].disabled){event.preventDefault();answer(index);}
+      return;
+    }
+  }
+  if(key===" " || key==="spacebar"){
+    if(clip && (phase==="ready" || phase==="paused" || phase==="startRetry")){event.preventDefault();playCurrent();}
+    return;
+  }
+  if(key==="enter" && phase==="review"){event.preventDefault();advance();}
 });
 showHome();
 loadMe().catch(()=>{});
