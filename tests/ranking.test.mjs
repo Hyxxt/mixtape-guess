@@ -28,6 +28,12 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
       if(index>0)q=(await send("next",payload,cookie)).data;
       assert.equal(q.index,index);assert.ok(q.choices.every(v=>v===null));
       const start=(await send("start",payload,cookie)).data;
+      if(index<9){
+        assert.equal(start.next.index,index+1);
+        assert.ok(start.next.choices.every(value=>value===null));
+        assert.equal((await send("start",{round,index:index+1},cookie)).status,409);
+        assert.equal((await send("answer",{round,index:index+1,choice:0},cookie)).status,409);
+      }else assert.equal(start.next,null);
       assert.equal((await send("start",payload,cookie)).data.startAt,start.startAt);
       assert.equal((await send("answer",{...payload,choice:0},cookie)).status,400);
       const secret=JSON.parse(DB.prepare("SELECT questions FROM games WHERE id=?").bind(round).first().questions)[index];

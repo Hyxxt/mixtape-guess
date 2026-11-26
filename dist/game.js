@@ -10,6 +10,8 @@ let score = 0, correctCount = 0, picked = null, progress = 0, startedAt = 0;
 let timer, clock, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
 let catalogPromise, pool, practiceSongs, currentResult, lastFailure, modalVersion = 0;
 let activeAnswer, profileReady = false;
+let advanceTimer;
+const reviewDuration = 1500;
 const isRanked = () => mode === "ranked";
 const total = () => isRanked() ? 10 : 5;
 const buttons = () => [...$("options").querySelectorAll("button")];
@@ -24,18 +26,28 @@ function action(label, callback) {
   b.type = "button"; b.onclick = callback;
   return b;
 }
-async function api(path, data, signal) {
-  const timeout = AbortSignal.timeout(13000);
-  const request = await fetch("/api/"+path,{
-    method:data === undefined ? "GET" : "POST",
-    credentials:"same-origin", cache:"no-store",
-    signal:signal ? AbortSignal.any([signal,timeout]) : timeout,
-    headers:data === undefined ? {} : {"Content-Type":"application/json"},
-    body:data === undefined ? undefined : JSON.stringify(data)
+async function withDeadline(parent, milliseconds, work) {
+  const request=new AbortController();
+  const cancel=()=>request.abort();
+  if(parent?.aborted) cancel();
+  else parent?.addEventListener("abort",cancel,{once:true});
+  const timeout=setTimeout(cancel,milliseconds);
+  try{return await work(request.signal);}
+  finally{clearTimeout(timeout);parent?.removeEventListener("abort",cancel);}
+}
+function api(path, data, parent) {
+  return withDeadline(parent,13000,async signal=>{
+    const request = await fetch("/api/"+path,{
+      method:data === undefined ? "GET" : "POST",
+      credentials:"same-origin", cache:"no-store",
+      signal,
+      headers:data === undefined ? {} : {"Content-Type":"application/json"},
+      body:data === undefined ? undefined : JSON.stringify(data)
+    });
+    const payload = await request.json().catch(()=>({}));
+    if (!request.ok) throw new Error(payload.error || "连接失败，请稍后重试。");
+    return payload;
   });
-  const payload = await request.json().catch(()=>({}));
-  if (!request.ok) throw new Error(payload.error || "连接失败，请稍后重试。");
-  return payload;
 }
 function shuffled(items) {
   const copy = [...items];
@@ -52,6 +64,7 @@ async function getCatalog() {
   return catalogPromise;
 }
 function showDialog(title, ...content) {
+  clearTimeout(advanceTimer);
   modalVersion++;
   $("modalContent").replaceChildren(node("h2",title), ...content);
   if (!modal.open) modal.showModal();
@@ -97,6 +110,7 @@ function newWave(seed) {
 }
 function stopClock() {clearInterval(clock);clearTimeout(timer);}
 function reset() {
+  clearTimeout(advanceTimer);
   generation++;controller.abort();controller=new AbortController();stopClock();player.stop();
   phase="home";question=null;clip=null;nextPrepared=null;currentResult=null;picked=null;
   activeAnswer=null;score=0;correctCount=0;progress=0;startedAt=0;lastFailure=null;
@@ -123,6 +137,7 @@ function setModeUI() {
   $("points").textContent=String(score).padStart(3,"0");
 }
 function showHome() {
+  document.body.classList.remove("in-game");
   setModeUI();newWave(0);
   document.querySelector(".choices h3").textContent="计分规则";
   $("mystery").textContent=isRanked() ? "十秒猜歌挑战" : "原唱自由练习";
@@ -145,7 +160,7 @@ function notifyError(message,retry) {
 function chooseMode(target) {
   if(mode===target) return;
   function switchNow() {closeDialog();reset();mode=target;showHome();}
-  if(phase==="home" || (phase==="review" && currentResult?.done)) {switchNow();return;}
+  if(phase==="home" || phase==="finished" || (phase==="review" && currentResult?.done)) {switchNow();return;}
   showDialog("退出当前挑战？",node("p","切换模式会结束当前这一局。"),action("切换模式",switchNow),action("继续当前挑战",closeDialog));
 }
 function profileForm(after) {
@@ -183,10 +198,11 @@ function practiceQuestion(index) {
   const choices=shuffled([song.name,...names]);
   return {index,total:5,choices,score,offset:song.offset,previewPath:"/api/preview?id="+song.id,answer:song.name,trackId:song.id};
 }
-function timedLoad(q,signal) {
-  return player.load(q,AbortSignal.any([signal,AbortSignal.timeout(18000)]));
+function timedLoad(q,parent,priority="auto") {
+  return withDeadline(parent,18000,signal=>player.load(q,signal,priority));
 }
 function showQuestion(q) {
+  document.body.classList.add("in-game");
   document.querySelector(".choices h3").textContent="这是哪首歌？";
   question=q;currentResult=null;picked=null;activeAnswer=null;progress=0;startedAt=0;clip=null;phase="loading";
   stopClock();player.stop();setModeUI();newWave(q.index);
@@ -200,14 +216,14 @@ function showQuestion(q) {
   $("options").replaceChildren(...list);
   playControl("正在准备原唱…","play",true);skipControl("",true);
 }
-function nextPacket(index) {
+function nextPacket(index, preparedQuestion) {
   const signal=controller.signal;
   // Resolve failures to values so background prefetch never leaks an unhandled rejection.
   return (async()=>{
     let q;
     try {
-      q=isRanked() ? await api("next",{round:question.round,index},signal) : practiceQuestion(index);
-      const audio=await timedLoad(q,signal);
+      q=preparedQuestion || (isRanked() ? await api("next",{round:question.round,index},signal) : practiceQuestion(index));
+      const audio=await timedLoad(q,signal,"low");
       return {q,audio};
     } catch(error) {return {q,error};}
   })();
@@ -306,11 +322,13 @@ async function playCurrent() {
     await player.unlock();
     if(token!==generation || question!==q)return;
     let elapsed=progress===10000?0:progress, delay=0;
+    let upcoming;
     if(isRanked()) {
       const before=performance.now();
       const scheduled=await api("start",{round:q.round,index:q.index},controller.signal);
       if(token!==generation || question!==q)return;
       q.choices=scheduled.choices;
+      upcoming=scheduled.next;
       const received=performance.now();
       const estimatedServer=scheduled.serverNow+(received-before)/2;
       const untilStart=scheduled.startAt-estimatedServer;
@@ -324,6 +342,9 @@ async function playCurrent() {
     clock=setInterval(tick,125);
     timer=setTimeout(finishPlayback,Math.max(0,startedAt+10000-performance.now()));
     tick();
+    if(q.index+1<q.total && (!isRanked() || upcoming)) {
+      nextPrepared ??= nextPacket(q.index+1,upcoming);
+    }
   } catch(e) {
     if(token!==generation || question!==q)return;
     phase=isRanked()?"startRetry":previous;stopClock();player.stop();
@@ -340,7 +361,7 @@ function answer(choice) {
   if (!isRanked() && !["live","paused","ready"].includes(phase))return;
   if(isRanked() && remainingPosition()>=10000)choice=-1;
   progress=remainingPosition();stopClock();player.stop();displayWave(progress);
-  picked=choice;phase="submitting";buttons().forEach(b=>b.disabled=true);skipControl("",true);
+  picked=choice;phase="submitting";buttons().forEach((b,i)=>{b.disabled=true;b.classList.toggle("chosen",i===choice);});skipControl("",true);
   if(isRanked()) {
     activeAnswer={round:question.round,index:question.index,choice};
     settle();return;
@@ -366,6 +387,7 @@ async function settle() {
 function finalAnswer(result) {
   currentResult=result;activeAnswer=null;phase="review";score=result.score;correctCount=result.correct;
   for (const [i,b] of buttons().entries()) {
+    b.classList.remove("chosen");
     b.disabled=true;b.children[1].textContent=question.choices[i];
     if(i===result.correctIndex) {b.classList.add("correct");b.append(node("small","✓ 正解"));}
     else if(i===picked) {b.classList.add("wrong");b.append(node("small","✕"));}
@@ -385,16 +407,27 @@ function finalAnswer(result) {
     if(!isRanked())rememberHistory(correctCount);
     clip=null;nextPrepared=null;
   } else {
-    clip=null;nextPrepared=nextPacket(question.index+1);
+    clip=null;nextPrepared ??= nextPacket(question.index+1);
   }
+  scheduleAdvance();
+}
+function scheduleAdvance() {
+  clearTimeout(advanceTimer);
+  if(phase!=="review" || modal.open || document.hidden)return;
+  advanceTimer=setTimeout(()=>{
+    if(phase==="review" && !modal.open && !document.hidden) advance();
+  },reviewDuration);
 }
 async function advance() {
-  if(currentResult.done) {showResults();return;}
+  if(phase!=="review")return;
+  clearTimeout(advanceTimer);
+  if(currentResult.done) {phase="finished";showResults();return;}
   const token=generation;
   phase="loading";playControl("正在准备下一题…","play",true);
   const takeNext=async()=>{
-    const packet=await (nextPrepared || nextPacket(question.index+1));nextPrepared=null;
+    const packet=await (nextPrepared || nextPacket(question.index+1));
     if(token!==generation)return;
+    nextPrepared=null;
     if (!packet.q) {notifyError(packet.error?.message || "下一题加载失败。",takeNext);return;}
     await prepareQuestion(packet.q,packet.audio);
   };
@@ -442,6 +475,7 @@ $("playBtn").onclick=()=>{
     case "live":pausePractice();break;
     case "submitRetry":settle();break;
     case "review":advance();break;
+    case "finished":showResults();break;
     case "error":{const retry=lastFailure;lastFailure=null;if(retry)retry();break;}
   }
 };
@@ -458,10 +492,12 @@ $("muteBtn").onclick=()=>{
 };
 $("lobby").onclick=()=>{closeDialog();$("game").scrollIntoView({block:"nearest"});};
 $("close").onclick=closeDialog;
+modal.addEventListener("close",scheduleAdvance);
 modal.addEventListener("click",e=>{if(e.target!==modal)return;const rect=modal.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)closeDialog();});
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)pausePractice();
   else if(isRanked() && (phase==="scheduled"||phase==="live"))tick();
+  scheduleAdvance();
 });
 showHome();
 loadMe().catch(()=>{});

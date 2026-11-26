@@ -97,8 +97,9 @@ export function createApi(catalog) {
         await run("INSERT INTO players(id,nickname,created) VALUES(?,?,?)",await hash(token),nickname,Date.now());
         return json({nickname},200,{"Set-Cookie":COOKIE+"="+token+"; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000"+(url.protocol==="https:"?"; Secure":"")});
       }
-      if(!player || !await first("SELECT id FROM players WHERE id=?",player)) fail(401,"请先设置参赛昵称。");
+      if(!player) fail(401,"请先设置参赛昵称。");
       if(post && path==="round"){
+        if(!await first("SELECT id FROM players WHERE id=?",player)) fail(401,"请先设置参赛昵称。");
         const now=Date.now();
         await run("DELETE FROM games WHERE owner=? AND updated<?",player,now-LIVE_MS);
         let row=await first("SELECT * FROM games WHERE owner=? AND finished=0",player);
@@ -118,6 +119,10 @@ export function createApi(catalog) {
         if(!row || Date.now()-row.updated>LIVE_MS) fail(410,"本局已过期，请重新开局。");
         const questions=JSON.parse(row.questions),q=questions[idx];
         if(post && path==="answer" && q.result) return json(q.result);
+        // Only the immediately upcoming audio may be buffered. Its timer and choices stay locked.
+        if(!post && path==="clip" && !row.finished && idx===row.cursor+1 && questions[row.cursor].start){
+          return json({url:await preview(q.id)});
+        }
         if(row.cursor!==idx || row.finished) fail(409,"本题已经结束，请回到当前题目。");
         if(!post && path==="clip") return json({url:await preview(q.id)});
         if(post && path==="next") return json(view(row));
@@ -131,9 +136,10 @@ export function createApi(catalog) {
           if(!choices.length) fail(409,"暂无替补题，请重试。");
           questions[idx]=makeQuestion(choices[Math.floor(Math.random()*choices.length)],catalog);
         }else if(post && path==="start"){
-          if(q.start) return json({startAt:q.start,serverNow:now,choices:q.choices});
-          q.start=now+1100;
-          result={startAt:q.start,choices:q.choices};
+          const next=idx+1<ROUND_SIZE ? view(row,idx+1) : null;
+          if(q.start) return json({startAt:q.start,serverNow:now,choices:q.choices,next});
+          q.start=now+400;
+          result={startAt:q.start,choices:q.choices,next};
         }else if(post && path==="answer"){
           if(!q.start || arrival<q.start || !Number.isInteger(body.choice) || body.choice < -1 || body.choice>3) fail(400,"本题尚未开始或答案无效。");
           const correctIndex=q.choices.indexOf(q.name);
