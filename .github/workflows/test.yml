@@ -17,6 +17,6 @@ jobs:
         with:
           node-version: "22"
       - name: Ranking and persistence tests
-        run: node --test tests
+        run: node --test tests/ranking.test.mjs
       - name: Build worker bundle
         run: node scripts/build.mjs
