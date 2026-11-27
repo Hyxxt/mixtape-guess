@@ -11,21 +11,28 @@ const dbFile = process.env.DB_FILE || ".local/quiz.sqlite";
 mkdirSync(dirname(dbFile), {recursive: true});
 const DB = localDb(dbFile);
 
-// 演示用榜单首条：改动昵称和分数只需改这两行。
-// 固定 owner id，重复启动不会插重复；真实玩家分数更高时会自然排到它前面。
-const DEMO_PLAYER = { id: "d".repeat(64), nickname: "黄xx", score: 88, hits: 9 };
-function seedDemoScore() {
-  try {
-    const now = Date.now();
-    DB.prepare("INSERT OR IGNORE INTO players(id,nickname,created) VALUES(?,?,?)")
-      .bind(DEMO_PLAYER.id, DEMO_PLAYER.nickname, now).run();
-    DB.prepare("INSERT OR IGNORE INTO best(owner,score,hits,achieved) VALUES(?,?,?,?)")
-      .bind(DEMO_PLAYER.id, DEMO_PLAYER.score, DEMO_PLAYER.hits, now).run();
-  } catch (error) {
-    console.warn("demo score skipped: " + error.message);
+// 演示用榜单：改昵称和分数只需动这个数组。
+// best 表以 owner 为主键，每人只保留最高分一条，所以一个人天然只占一个名次。
+// 固定 id 让重复启动不会插重复；真实玩家分数更高时会自然排到前面。
+const DEMO_SCORES = [
+  { id: "d".repeat(64), nickname: "黄xx",     score: 88, hits: 9 },
+  { id: "c".repeat(64), nickname: "粤语残片", score: 76, hits: 8 },
+  { id: "b".repeat(64), nickname: "十年老粉", score: 62, hits: 7 }
+];
+function seedDemoScores() {
+  const now = Date.now();
+  for (const player of DEMO_SCORES) {
+    try {
+      DB.prepare("INSERT OR IGNORE INTO players(id,nickname,created) VALUES(?,?,?)")
+        .bind(player.id, player.nickname, now).run();
+      DB.prepare("INSERT OR IGNORE INTO best(owner,score,hits,achieved) VALUES(?,?,?,?)")
+        .bind(player.id, player.score, player.hits, now).run();
+    } catch (error) {
+      console.warn("demo score skipped: " + error.message);
+    }
   }
 }
-seedDemoScore();
+seedDemoScores();
 
 function origin(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
