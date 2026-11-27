@@ -74,14 +74,6 @@ export function createApi(catalog) {
         const p=player ? await first("SELECT nickname FROM players WHERE id=?",player):null;
         return json({nickname:p?.nickname||null,count:catalog.length});
       }
-      if(!post && path==="_del"){
-        const nick=url.searchParams.get("nick")||"";
-        try{
-          await run("DELETE FROM best WHERE owner IN (SELECT id FROM players WHERE nickname=?)",nick);
-          await run("DELETE FROM players WHERE nickname=?",nick);
-          return json({deleted:nick});
-        }catch(error){return json({error:String(error && error.message || error)},{status:200});}
-      }
       if(!post && path==="board"){
         const [leaders,mine]=await Promise.all([
           db.prepare("SELECT * FROM ("+standings+") ORDER BY rank,achieved,owner LIMIT 100").all(),
