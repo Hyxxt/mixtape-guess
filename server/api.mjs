@@ -54,6 +54,7 @@ const standings = `SELECT b.owner,p.nickname,b.score,b.hits AS correct,b.achieve
 // 访问统计：只记页面级请求（前端每次加载都会调 /api/me）。
 // 设备标识用 IP+UA 的哈希，不存明文；写入 fire-and-forget，不拖慢响应。
 // fresh 由数据库判定（当天该设备是否已出现过），所以容器重启也不会重复计 UV。
+const loggedUa = new Set();
 const CRAWLER = /curl|wget|bot|spider|crawler|monitor|uptime|python-requests|python-urllib|node-fetch|go-http|okhttp|java\/|axios|headless|phantom/i;
 function deviceKey(request) {
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim();
@@ -68,6 +69,10 @@ function trackVisit(db, request) {
     const ua = request.headers.get("user-agent") || "";
     if (!ua || CRAWLER.test(ua)) return;
     const did = deviceKey(request);
+    if (!loggedUa.has(did) && loggedUa.size < 8) {
+      loggedUa.add(did);
+      console.log("VISIT ua=" + ua.slice(0, 110) + " ip=" + (request.headers.get("x-forwarded-for") || "-").split(",")[0]);
+    }
     const now = Date.now();
     const dayStart = Math.floor(now / 86400000) * 86400000;
     Promise.resolve(
