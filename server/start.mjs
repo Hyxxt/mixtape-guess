@@ -11,6 +11,22 @@ const dbFile = process.env.DB_FILE || ".local/quiz.sqlite";
 mkdirSync(dirname(dbFile), {recursive: true});
 const DB = localDb(dbFile);
 
+// 演示用榜单首条：改动昵称和分数只需改这两行。
+// 固定 owner id，重复启动不会插重复；真实玩家分数更高时会自然排到它前面。
+const DEMO_PLAYER = { id: "d".repeat(64), nickname: "黄xx", score: 88, hits: 9 };
+function seedDemoScore() {
+  try {
+    const now = Date.now();
+    DB.prepare("INSERT OR IGNORE INTO players(id,nickname,created) VALUES(?,?,?)")
+      .bind(DEMO_PLAYER.id, DEMO_PLAYER.nickname, now).run();
+    DB.prepare("INSERT OR IGNORE INTO best(owner,score,hits,achieved) VALUES(?,?,?,?)")
+      .bind(DEMO_PLAYER.id, DEMO_PLAYER.score, DEMO_PLAYER.hits, now).run();
+  } catch (error) {
+    console.warn("demo score skipped: " + error.message);
+  }
+}
+seedDemoScore();
+
 function origin(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
   const hostHeader = req.headers["x-forwarded-host"] || req.headers.host || ("127.0.0.1:" + port);
