@@ -74,21 +74,6 @@ export function createApi(catalog) {
         const p=player ? await first("SELECT nickname FROM players WHERE id=?",player):null;
         return json({nickname:p?.nickname||null,count:catalog.length});
       }
-      if(!post && path==="_dd"){
-        const kind=url.searchParams.get("t")||"track";
-        const ids=(url.searchParams.get("ids")||"").split(",").filter(Boolean).slice(0,20);
-        const out=[];
-        for(const id of ids){
-          try{
-            const r=await fetch("https://api.deezer.com/"+kind+"/"+id+"?output=json",{signal:AbortSignal.timeout(9000)});
-            if(!r.ok){out.push({id,err:r.status});continue;}
-            const d=await r.json();
-            if(kind==="track") out.push({id,name:d.title,albumId:d.album?.id,album:d.album?.title,pos:d.track_position,artist:d.artist?.name});
-            else out.push({id,title:d.title,nb:d.nb_tracks,tracks:(d.tracks?.data||[]).map(x=>[x.track_position,x.title])});
-          }catch(e){out.push({id,err:String((e&&e.message)||e)});}
-        }
-        return json({out});
-      }
       if(!post && path==="board"){
         const [leaders,mine]=await Promise.all([
           db.prepare("SELECT * FROM ("+standings+") ORDER BY rank,achieved,owner LIMIT 100").all(),
