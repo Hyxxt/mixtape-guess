@@ -4,7 +4,9 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: node scripts/build.mjs
+    # Add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the Render dashboard
+    # (or as Blueprint secrets) to persist the leaderboard across deploys.
+    buildCommand: npm ci --omit=dev && node scripts/build.mjs
     startCommand: npm start
     envVars:
       - key: NODE_VERSION

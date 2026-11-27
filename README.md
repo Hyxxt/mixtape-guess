@@ -4,7 +4,7 @@
 
 - 在线试玩：<https://caige-radio.onrender.com>
 - 曲库：250+ 首，每题只播放 Deezer 30 秒试听中的 10 秒
-- 技术栈：原生 JavaScript、Web Audio API、Node.js 22、SQLite、Render
+- 技术栈：原生 JavaScript、Web Audio API、Node.js 22、SQLite / Turso、Render
 
 ![猜歌电台首页](docs/screenshot.jpg)
 
@@ -30,6 +30,7 @@
 需要 Node.js >= 22.5（使用内置 `node:sqlite`）。
 
 ```bash
+npm ci
 npm run build
 npm start          # http://localhost:8080
 ```
@@ -48,11 +49,28 @@ npm test
 
 ## 部署
 
-仓库包含 `render.yaml`，Render 会执行 `node scripts/build.mjs` 后运行 `npm start`。
+仓库包含 `render.yaml`，Render 会执行 `npm ci --omit=dev && node scripts/build.mjs` 后运行 `npm start`。
+
+### 启用 Turso 持久化（推荐）
+
+未配置时服务自动回退到本地 SQLite（免费实例重新部署会重置）。配置后启动会连接 Turso 并自动执行 `drizzle/` 里的迁移：
+
+```bash
+# 1. 创建数据库（也可在 Turso 控制台操作）
+turso db create caige-radio
+turso db show caige-radio --url
+turso db tokens create caige-radio
+
+# 2. 在 Render 的 Environment 中添加：
+#    TURSO_DATABASE_URL=libsql://...
+#    TURSO_AUTH_TOKEN=...
+```
+
+`TURSO_AUTH_TOKEN` 只放在 Render 环境变量里，不要提交到仓库。
 
 需要注意：
 
-- 免费实例的文件系统不是持久的。默认 SQLite 文件在实例本地，重新部署或重启会重置排行榜；需要长期榜单时请换 Turso、Neon 或挂持久盘。
+- 免费实例的文件系统不是持久的。默认 SQLite 文件在实例本地，重新部署或重启会重置排行榜；配置 Turso 后榜单跨部署保留。
 - `keepalive` 工作流只在北京时间 08:00–24:00 每 10 分钟唤醒一次，夜间让实例休眠。Render 免费额度是 workspace 共享的 750 小时/月，24/7 保活会占掉几乎全部额度。
 - 免费实例无流量约 15 分钟后休眠，唤醒可能需要约 60 秒。
 - 首次启动会写入一条演示成绩，避免空榜；可在 `server/start.mjs` 的 `DEMO_SCORES` 中修改或删除。
@@ -66,7 +84,8 @@ server/start.mjs   Node HTTP 服务器与本地 SQLite 启动
 scripts/build.mjs  把静态资源和 API 打包成可直接运行的 worker
 scripts/catalog.py 曲库刷新脚本（需要 uv / ffmpeg / ONNX Runtime）
 scripts/local-db.mjs 本地 SQLite 的 D1 风格适配层
-tests/             计时与多玩家排行榜测试
+scripts/turso-db.mjs Turso/libSQL 的 D1 风格适配层（自动迁移）
+tests/             计时、多玩家排行榜与 Turso 适配器测试
 ```
 
 ## 数据与版权

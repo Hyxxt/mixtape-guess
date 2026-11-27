@@ -16,7 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install dependencies
+        run: npm ci
       - name: Ranking and persistence tests
-        run: node --test tests/ranking.test.mjs
+        run: node --test tests/ranking.test.mjs tests/turso.test.mjs
       - name: Build worker bundle
         run: node scripts/build.mjs

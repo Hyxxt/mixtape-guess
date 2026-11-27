@@ -6,7 +6,7 @@
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "node server/start.mjs",
-    "test": "node --test tests/ranking.test.mjs",
+    "test": "node --test tests/ranking.test.mjs tests/turso.test.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "engines": {
@@ -15,5 +15,8 @@
   "devDependencies": {
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15"
   }
 }
