@@ -10,8 +10,11 @@ let score = 0, correctCount = 0, picked = null, progress = 0, startedAt = 0;
 let timer, clock, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
 let catalogPromise, pool, practiceSongs, currentResult, lastFailure, modalVersion = 0;
 let activeAnswer, profileReady = false;
-let advanceTimer;
-const reviewDuration = 1500;
+let advanceTimer, reviewHold = false, serverRtt = 0;
+const reviewDuration = 3000;
+// Touch devices get no countdown auto-advance: reading the answer and tapping the
+// Deezer link must stay possible without racing a timer.
+const autoAdvanceEnabled = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 const isRanked = () => mode === "ranked";
 const total = () => isRanked() ? 10 : 5;
 const buttons = () => [...$("options").querySelectorAll("button")];
@@ -36,6 +39,7 @@ async function withDeadline(parent, milliseconds, work) {
   finally{clearTimeout(timeout);parent?.removeEventListener("abort",cancel);}
 }
 function api(path, data, parent) {
+  const started=performance.now();
   return withDeadline(parent,13000,async signal=>{
     const request = await fetch("/api/"+path,{
       method:data === undefined ? "GET" : "POST",
@@ -47,7 +51,7 @@ function api(path, data, parent) {
     const payload = await request.json().catch(()=>({}));
     if (!request.ok) throw new Error(payload.error || "连接失败，请稍后重试。");
     return payload;
-  });
+  }).then(payload=>{serverRtt=performance.now()-started;return payload;});
 }
 function shuffled(items) {
   const copy = [...items];
@@ -124,7 +128,7 @@ function skipControl(label,hidden=false) {
 function setProfile(name) {
   nickname=name || "";
   const label=$("profile").querySelector("[data-label]");
-  (label || $("profile")).textContent=nickname || "游客昵称";
+  (label || $("profile")).textContent=nickname || "游客参赛";
 }
 function setModeUI() {
   for(const id of ["ranked","practice"]) {
@@ -145,6 +149,7 @@ function showHome() {
   $("startCta").hidden=false;
   $("transportRow").hidden=true;
   $("choiceEyebrowText").textContent="玩法";
+  $("choiceTag").textContent="计分";
   document.querySelector(".choices h3").textContent="计分规则";
   $("mystery").textContent=isRanked() ? "十秒猜歌挑战" : "原唱自由练习";
   $("status").textContent="就绪";
@@ -212,8 +217,13 @@ function showQuestion(q) {
   $("startCta").hidden=true;
   $("transportRow").hidden=false;
   $("choiceEyebrowText").textContent="猜歌";
+  $("choiceTag").textContent="四选一";
   document.querySelector(".choices h3").textContent="这是哪首歌？";
   question=q;currentResult=null;picked=null;activeAnswer=null;progress=0;startedAt=0;clip=null;phase="loading";
+  // A resumed ranked round already has points; practice prefetches the next
+  // question before the current answer, so its q.score snapshot is stale.
+  if(isRanked() && Number.isFinite(q.score)) score=q.score;
+  reviewHold=false;
   stopClock();player.stop();setModeUI();newWave(q.index);
   $("mystery").textContent="神秘曲目 "+pad(q.index+1);
   $("status").textContent="加载中";$("feedback").textContent="正在准备原唱，加载时间不计入作答。";
@@ -334,7 +344,7 @@ async function playCurrent() {
     let upcoming;
     if(isRanked()) {
       const before=performance.now();
-      const scheduled=await api("start",{round:q.round,index:q.index},controller.signal);
+      const scheduled=await api("start",{round:q.round,index:q.index,rtt:serverRtt},controller.signal);
       if(token!==generation || question!==q)return;
       q.choices=scheduled.choices;
       upcoming=scheduled.next;
@@ -363,7 +373,7 @@ async function playCurrent() {
 function pausePractice() {
   if(isRanked() || phase!=="live")return;
   progress=remainingPosition();stopClock();player.stop();phase="paused";displayWave(progress);
-  $("status").textContent="PAUSED";playControl("继续播放","play");skipControl("跳过本题");
+  $("status").textContent="已暂停";playControl("继续播放","play");skipControl("跳过本题");
 }
 function answer(choice) {
   if (isRanked() && phase!=="live" && !(choice===-1 && phase==="scheduled"))return;
@@ -407,6 +417,7 @@ function finalAnswer(result) {
   const trackId=result.trackId||question.trackId;
   if(Number.isSafeInteger(trackId)){
     const source=node("a","听完整歌曲");
+    source.className="listenLink";
     source.href="https://www.deezer.com/track/"+trackId;
     source.target="_blank";source.rel="noopener noreferrer";
     $("feedback").append(" ",source);
@@ -422,10 +433,20 @@ function finalAnswer(result) {
 }
 function scheduleAdvance() {
   clearTimeout(advanceTimer);
-  if(phase!=="review" || modal.open || document.hidden)return;
+  if(!autoAdvanceEnabled || reviewHold || phase!=="review" || modal.open || document.hidden)return;
   advanceTimer=setTimeout(()=>{
-    if(phase==="review" && !modal.open && !document.hidden) advance();
+    if(phase==="review" && !reviewHold && !modal.open && !document.hidden) advance();
   },reviewDuration);
+}
+function holdAdvance(){if(phase!=="review")return;reviewHold=true;clearTimeout(advanceTimer);}
+function releaseAdvance(){reviewHold=false;scheduleAdvance();}
+function watchReviewHold(element) {
+  element.addEventListener("pointerenter",holdAdvance);
+  element.addEventListener("pointerleave",releaseAdvance);
+  element.addEventListener("focusin",holdAdvance);
+  element.addEventListener("focusout",event=>{
+    if(!element.contains(event.relatedTarget)) releaseAdvance();
+  });
 }
 async function advance() {
   if(phase!=="review")return;
@@ -442,12 +463,58 @@ async function advance() {
   };
   await takeNext();
 }
+function shareSummary() {
+  const label=isRanked()?"排名赛":"练习";
+  return "我在「猜歌电台」的"+label+"拿了 "+score+" 分，答对 "+correctCount+"/"+total()+" 题，来挑战我："+location.origin+"/";
+}
+function copyText(text) {
+  const area=document.createElement("textarea");
+  area.value=text;area.setAttribute("readonly","");
+  area.style.cssText="position:fixed;top:0;left:-9999px;opacity:0";
+  modal.append(area);area.select();
+  let copied=false;
+  try {copied=document.execCommand("copy");} catch {}
+  area.remove();
+  return copied;
+}
+async function shareResult(status) {
+  const text=shareSummary();
+  status.hidden=false;
+  try {
+    if(navigator.share) {
+      await navigator.share({title:"猜歌电台 · 陈奕迅专场",text,url:location.origin+"/"});
+      status.textContent="已打开分享面板。";
+      return;
+    }
+    if(navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      status.textContent="已复制分享文案，去发给朋友吧。";
+      return;
+    }
+    status.textContent=copyText(text)?"已复制分享文案。":"复制失败，请手动复制地址栏链接。";
+  } catch(error) {
+    if(error?.name==="AbortError")return;
+    status.textContent=copyText(text)?"已复制分享文案。":"分享失败，请手动复制地址栏链接。";
+  }
+}
 function showResults() {
   const line=node("div",String(score),"bigscore");line.append(node("small"," / "+(isRanked()?"100":"500")+" 分"));
-  const details=node("p","共 "+total()+" 题，答对 "+correctCount+" 题。"+(isRanked()?"本局已计入总榜。":""));
-  const parts=[line,details,action("再来一局",()=>{closeDialog();begin();})];
+  const base="共 "+total()+" 题，答对 "+correctCount+" 题。";
+  const details=node("p",base+(isRanked()?"正在读取个人排名…":""));
+  const shareStatus=node("p",null,"sharemsg");shareStatus.hidden=true;shareStatus.setAttribute("role","status");
+  const share=action("分享战绩",()=>shareResult(shareStatus));share.classList.add("secondary");
+  const parts=[line,details,shareStatus,share,action("再来一局",()=>{closeDialog();begin();})];
   if(isRanked())parts.push(action("查看排行榜",showBoard));
-  showDialog(isRanked()?"排名赛成绩":"练习成绩",...parts);
+  const version=showDialog(isRanked()?"排名赛成绩":"练习成绩",...parts);
+  if(isRanked()) {
+    api("board").then(board=>{
+      if(version!==modalVersion || !modal.open)return;
+      const mine=board.mine;
+      details.textContent=base+(mine?"个人最高 "+mine.score+" 分 · 当前第 "+mine.rank+" 名。":"本局已提交。");
+    }).catch(()=>{
+      if(version===modalVersion && modal.open) details.textContent=base+"本局已提交。";
+    });
+  }
 }
 async function showBoard() {
   const content=node("div");content.append(node("p","正在读取排行榜…"));
@@ -461,21 +528,53 @@ async function showBoard() {
     content.append(node("p","显示前 100 位。按个人最高分排名，同分时答对更多者优先，两项相同则并列。"));
     for(const row of board.rows) {
       const item=node("div",null,"logrow");
-      item.append(node("b","#"+row.rank),node("span",row.nickname),node("strong",row.score+" 分"));
+      const right=node("span",null,"boardright");
+      right.append(node("small",(row.correct ?? 0)+" / 10"),node("strong",row.score+" 分"));
+      item.append(node("b","#"+row.rank),node("span",row.nickname,"boardname"),right);
       content.append(item);
     }
   } catch(e) {if(version===modalVersion)content.replaceChildren(node("p","排行榜暂时无法读取。"),action("重新加载",showBoard));}
 }
-function showHistory() {
+async function showHistory() {
   const rows=historyRows();
-  const container=node("div");
-  if(!rows.length) container.append(node("p","本机还没有已完成的练习。"));
+  const container=node("div","正在读取战绩…");
+  const version=showDialog("我的战绩",container);
+  const blocks=[];
+  try {
+    const board=await api("board");
+    if(version!==modalVersion || !modal.open)return;
+    if(board.mine) {
+      const best=node("div",null,"logrow");
+      best.append(node("span","排名赛最高"),node("strong",board.mine.score+" 分"),node("b","第 "+board.mine.rank+" 名"));
+      blocks.push(best);
+    } else {
+      blocks.push(node("p","还没有排名赛成绩，完成一局排名赛即可上榜。"));
+    }
+  } catch {
+    if(version!==modalVersion || !modal.open)return;
+    blocks.push(node("p","排名赛战绩暂时无法读取。"));
+  }
+  blocks.push(node("h3","练习记录","dialogsub"));
+  if(!rows.length) blocks.push(node("p","本机还没有已完成的练习。"));
   rows.forEach(row=>{
     const item=node("div",null,"logrow");
     item.append(node("span",new Date(row.time).toLocaleDateString("zh-CN")),node("span","答对 "+row.right+" / 5"),node("b",row.right*100+" 分"));
-    container.append(item);
+    blocks.push(item);
   });
-  showDialog("练习战绩",container);
+  container.replaceChildren(...blocks);
+}
+function showHelp() {
+  showDialog("玩法说明",node("p","排名赛每局 10 题，每题限时 10 秒。第 1 秒内答对得 10 分，第 2 秒得 9 分，依次递减，第 10 秒得 1 分。答错、放弃和超时均为 0 分。"),node("p","原唱加载完毕才开始计时。排名赛播放后不能暂停或重听。练习模式可自由暂停、重听，成绩保存在本机。键盘可用：1-4 或 A-D 选答案，空格播放或重听，Enter 进下一题。"));
+}
+function canOpenUtility() {
+  return !(isRanked() && ["starting","scheduled","live","submitting","submitRetry"].includes(phase));
+}
+function openUtility(open) {
+  if(!canOpenUtility()) {
+    $("feedback").textContent="答题中不能打开其他页面，先完成本题。";
+    return;
+  }
+  open();
 }
 $("playBtn").onclick=()=>{
   switch(phase) {
@@ -491,10 +590,10 @@ $("playBtn").onclick=()=>{
 $("skipBtn").onclick=()=>{if(phase==="error")replaceQuestion();else answer(-1);};
 $("ranked").onclick=()=>chooseMode("ranked");
 $("practice").onclick=()=>chooseMode("practice");
-$("board").onclick=showBoard;
-$("history").onclick=showHistory;
-$("profile").onclick=()=>profileForm();
-$("helpBtn").onclick=()=>showDialog("玩法说明",node("p","排名赛每局 10 题，每题限时 10 秒。第 1 秒内答对得 10 分，第 2 秒得 9 分，依次递减，第 10 秒得 1 分。答错、放弃和超时均为 0 分。"),node("p","原唱加载完毕才开始计时。排名赛播放后不能暂停或重听。练习模式可自由暂停、重听，成绩保存在本机。键盘可用：1-4 或 A-D 选答案，空格播放或重听，Enter 进下一题。"));
+$("board").onclick=()=>openUtility(showBoard);
+$("history").onclick=()=>openUtility(showHistory);
+$("profile").onclick=()=>openUtility(()=>profileForm());
+$("helpBtn").onclick=()=>openUtility(showHelp);
 $("startCta").onclick=()=>{
   if(phase!=="home" && phase!=="finished")return;
   begin();
@@ -506,6 +605,8 @@ $("muteBtn").onclick=()=>{
 };
 $("lobby").onclick=()=>{closeDialog();$("game").scrollIntoView({block:"nearest"});};
 $("close").onclick=closeDialog;
+watchReviewHold($("answerFoot"));
+watchReviewHold($("playBtn"));
 modal.addEventListener("close",scheduleAdvance);
 modal.addEventListener("click",e=>{if(e.target!==modal)return;const rect=modal.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)closeDialog();});
 document.addEventListener("visibilitychange",()=>{

@@ -4,12 +4,12 @@ import {join} from "node:path";
 import {createHash} from "node:crypto";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const dist=join(root,"dist");
-const types={"index.html":"text/html; charset=utf-8","style.css":"text/css; charset=utf-8","game.js":"application/javascript; charset=utf-8","music.js":"application/javascript; charset=utf-8","catalog.json":"application/json; charset=utf-8","boombox.webp":"image/webp"};
+const types={"index.html":"text/html; charset=utf-8","style.css":"text/css; charset=utf-8","game.js":"application/javascript; charset=utf-8","music.js":"application/javascript; charset=utf-8","catalog.json":"application/json; charset=utf-8","boombox.webp":"image/webp","og-cover.jpg":"image/jpeg"};
 const records={};
 for(const [name,type] of Object.entries(types)){
   const data=await readFile(join(dist,name));
   const digest=createHash("sha256").update(data).digest("hex").slice(0,16);
-  records["/"+name]=[type,name.endsWith("webp")?data.toString("base64"):data.toString("utf8"),digest];
+  records["/"+name]=[type,type.startsWith("image/")?data.toString("base64"):data.toString("utf8"),digest];
 }
 const page=records["/index.html"];
 page[1]=page[1].replace(/(href|src)="(style\.css|game\.js|music\.js|boombox\.webp)(?:\?v=[^"]*)?"/g,
@@ -31,7 +31,7 @@ export default {async fetch(request,env){
   const immutable=url.searchParams.get("v")===digest;
   const headers={"Content-Type":type,"ETag":'"'+digest+'"',"Cache-Control":immutable?"public, max-age=31536000, immutable":"no-cache","X-Content-Type-Options":"nosniff"};
   if(request.headers.get("If-None-Match")===headers.ETag)return new Response(null,{status:304,headers});
-  const body=type==="image/webp"?Uint8Array.from(atob(content),x=>x.charCodeAt(0)):content;
+  const body=type.startsWith("image/")?Uint8Array.from(atob(content),x=>x.charCodeAt(0)):content;
   return new Response(request.method==="HEAD"?null:body,{headers});
 }};
 `;

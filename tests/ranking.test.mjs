@@ -65,3 +65,19 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     assert.equal(board.mine,null);
   } finally {Date.now=originalTime;}
 });
+test("start lead follows reported RTT and stays idempotent",async()=>{
+  const DB=localDb(":memory:");
+  const api=createApi(Array.from({length:15},(_,i)=>({name:"Song "+i,id:i+1,offset:3})));
+  const origin="https://quiz.example";
+  async function send(route,body,cookie=""){
+    const response=await api(new Request(origin+"/api/"+route,{method:body?"POST":"GET",headers:{Origin:origin,Cookie:cookie,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined}),{DB});
+    return {data:await response.json(),cookie:response.headers.get("Set-Cookie")?.split(";")[0]};
+  }
+  const cookie=(await send("join",{nickname:"RTT"})).cookie;
+  const round=(await send("round",{},cookie)).data.round;
+  const slow=await send("start",{round,index:0,rtt:1200},cookie);
+  const lead=slow.data.startAt-slow.data.serverNow;
+  assert.ok(lead>=850 && lead<=950,"lead was "+lead);
+  const again=await send("start",{round,index:0,rtt:0},cookie);
+  assert.equal(again.data.startAt,slow.data.startAt);
+});
