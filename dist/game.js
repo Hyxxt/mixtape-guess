@@ -135,7 +135,7 @@ function setModeUI() {
   $("heroTagline").textContent=isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "每局 5 首，可以反复听，猜中就得 100 分。";
   $("startCta").textContent=isRanked() ? "开始排名赛" : "开始练习";
   $("roundCount").textContent=String(total());
-  $("track").textContent="TRACK "+pad((question?.index || 0)+1)+" / "+pad(total());
+  $("track").textContent="第 "+pad((question?.index || 0)+1)+" / "+pad(total())+" 首";
   $("points").textContent=String(score).padStart(3,"0");
 }
 function showHome() {
@@ -144,10 +144,10 @@ function showHome() {
   $("elapsed").textContent="00:00";
   $("startCta").hidden=false;
   $("transportRow").hidden=true;
-  $("choiceEyebrowText").textContent="HOW TO PLAY";
+  $("choiceEyebrowText").textContent="玩法";
   document.querySelector(".choices h3").textContent="计分规则";
   $("mystery").textContent=isRanked() ? "十秒猜歌挑战" : "原唱自由练习";
-  $("status").textContent="READY";
+  $("status").textContent="就绪";
   $("feedback").textContent=isRanked() ? "每局 10 题，答完即可上榜。" : "每局 5 题，可暂停、重听。";
   const samples=isRanked() ? [["第 1 秒","10 分"],["第 2 秒","9 分"],["第 10 秒","1 分"],["答错或超时","0 分"]] :
     [["每局曲目","5 首"],["每题片段","10 秒"],["每题答对","100 分"],["最高得分","500 分"]];
@@ -159,7 +159,7 @@ function notifyError(message,retry) {
   phase="error";lastFailure=retry;
   stopClock();player.stop();
   buttons().forEach(b=>b.disabled=true);
-  $("status").textContent="RETRY";
+  $("status").textContent="重试";
   $("feedback").textContent=message;
   playControl("重试","repeat");skipControl("",true);
 }
@@ -211,12 +211,12 @@ function showQuestion(q) {
   document.body.classList.add("in-game");
   $("startCta").hidden=true;
   $("transportRow").hidden=false;
-  $("choiceEyebrowText").textContent="GUESS THE SONG";
+  $("choiceEyebrowText").textContent="猜歌";
   document.querySelector(".choices h3").textContent="这是哪首歌？";
   question=q;currentResult=null;picked=null;activeAnswer=null;progress=0;startedAt=0;clip=null;phase="loading";
   stopClock();player.stop();setModeUI();newWave(q.index);
   $("mystery").textContent="神秘曲目 "+pad(q.index+1);
-  $("status").textContent="BUFFERING";$("feedback").textContent="正在准备原唱，加载时间不计入作答。";
+  $("status").textContent="加载中";$("feedback").textContent="正在准备原唱，加载时间不计入作答。";
   const list=q.choices.map((name,i)=>{
     const b=node("button",null,"opt");b.type="button";b.disabled=true;
     b.append(node("span","ABCD"[i],"letter"),node("span",isRanked()?"播放后揭晓":name));
@@ -275,7 +275,7 @@ async function prepareQuestion(q, preloaded) {
   }
 }
 function readyMessage() {
-  $("status").textContent="READY";$("feedback").textContent="原唱已就绪，点击播放。";
+  $("status").textContent="就绪";$("feedback").textContent="原唱已就绪，点击播放。";
   playControl("播放原唱","play");skipControl("",true);
 }
 async function replaceQuestion() {
@@ -304,7 +304,7 @@ function revealOptions() {
 }
 function renderLive() {
   phase="live";revealOptions();
-  $("status").textContent="ON AIR";
+  $("status").textContent="播放中";
   $("feedback").textContent=isRanked() ? "倒计时内选出答案。" : "听原唱，选出你的答案。";
   playControl(isRanked()?"限时答题中":"暂停播放",isRanked()?"clock":"pause",isRanked());
   skipControl(isRanked()?"放弃本题":"跳过本题");
@@ -321,7 +321,7 @@ function finishPlayback() {
   progress=10000;displayWave(progress);stopClock();player.stop();
   if(isRanked()) {answer(-1);return;}
   phase="ready";revealOptions();
-  $("status").textContent="REPLAY";playControl("重听片段","repeat");skipControl("跳过本题");
+  $("status").textContent="重播";playControl("重听片段","repeat");skipControl("跳过本题");
 }
 async function playCurrent() {
   if(!clip || (phase!=="ready" && phase!=="paused" && phase!=="startRetry"))return;
@@ -346,7 +346,7 @@ async function playCurrent() {
     startedAt=performance.now()+delay-elapsed;phase="scheduled";
     if(elapsed>=10000) {finishPlayback();return;}
     player.start(clip,delay/1000,elapsed/1000,finishPlayback);
-    $("status").textContent=delay>0?"GET READY":"ON AIR";
+    $("status").textContent=delay>0?"即将开始":"播放中";
     if(delay<=0)renderLive();
     clock=setInterval(tick,125);
     timer=setTimeout(finishPlayback,Math.max(0,startedAt+10000-performance.now()));
@@ -357,7 +357,7 @@ async function playCurrent() {
   } catch(e) {
     if(token!==generation || question!==q)return;
     phase=isRanked()?"startRetry":previous;stopClock();player.stop();
-    $("feedback").textContent="未能开始播放，点击重试。";$("status").textContent="RETRY";playControl("重试播放","repeat");
+    $("feedback").textContent="未能开始播放，点击重试。";$("status").textContent="重试";playControl("重试播放","repeat");
   }
 }
 function pausePractice() {
@@ -388,7 +388,7 @@ async function settle() {
     if(token===generation) finalAnswer(result);
   } catch(e) {
     if(token!==generation)return;
-    phase="submitRetry";$("status").textContent="RETRY";
+    phase="submitRetry";$("status").textContent="重试";
     $("feedback").textContent="成绩尚未确认，请重试提交同一答案。";
     playControl("重新提交","repeat");
   }
@@ -402,7 +402,7 @@ function finalAnswer(result) {
     else if(i===picked) {b.classList.add("wrong");b.append(node("small","✕"));}
   }
   $("points").textContent=String(score).padStart(3,"0");
-  $("status").textContent="RESULT";
+  $("status").textContent="已作答";
   $("feedback").textContent=result.earned>0?"猜对了！+"+result.earned+" 分":"本题 0 分，答案是《"+result.name+"》。";
   const trackId=result.trackId||question.trackId;
   if(Number.isSafeInteger(trackId)){

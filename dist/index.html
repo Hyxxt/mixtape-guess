@@ -33,19 +33,19 @@
 <button id="profile" class="help profile"><span data-label>游客参赛</span></button><button class="help" id="helpBtn" aria-label="玩法说明" title="玩法说明"><svg><use href="#help"/></svg>玩法说明</button>
 </div></header>
 <main>
-<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img width="1080" height="720" fetchpriority="high" src="boombox.webp" alt=""><span class="sticker">EASON FM</span></div>
-<div class="herocopy"><span class="edition"><svg><use href="#signal"/></svg> EASON CHAN · 原唱专场</span><h1 id="headline">陈奕迅专场</h1><p id="heroTagline">听十秒陈奕迅原唱，猜得越快，得分越高。</p><div class="tags"><span><svg><use href="#stack"/></svg>曲库 <b id="catalogCount">…</b> 首 · 每局 <b id="roundCount">10</b> 题</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
+<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img width="1080" height="720" fetchpriority="high" src="boombox.webp" alt=""><span class="sticker">陈奕迅 FM</span></div>
+<div class="herocopy"><span class="edition"><svg><use href="#signal"/></svg> 陈奕迅 · 原唱专场</span><h1 id="headline">陈奕迅专场</h1><p id="heroTagline">听十秒陈奕迅原唱，猜得越快，得分越高。</p><div class="tags"><span><svg><use href="#stack"/></svg>曲库 <b id="catalogCount">…</b> 首 · 每局 <b id="roundCount">10</b> 题</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
 <section id="game" aria-label="听曲猜歌"><div class="sectionhead"><h2><span class="sectionicon"><svg><use href="#bolt"/></svg></span><span id="modeTitle">限时排名赛</span></h2><div class="modeSwitch" role="group" aria-label="玩法"><button id="ranked" aria-pressed="true">限时排名</button><button id="practice" aria-pressed="false">自由练习</button></div><button id="startCta" class="primary" type="button">开始排名赛</button><div class="score"><span>本局得分</span><strong id="points">000</strong><span>分</span></div></div>
 <div class="cards">
-<article class="player panel"><div class="cardhead"><span class="eyebrow"><i></i> AUDIO PLAYER</span><span class="track" id="track"></span></div>
+<article class="player panel"><div class="cardhead"><span class="eyebrow"><i></i> 原唱播放器</span><span class="track" id="track"></span></div>
 <h3 id="mystery"></h3>
-<div class="soundstage"><div class="stagehead"><span><i></i> <b id="status">READY</b></span><span>STEREO</span></div>
+<div class="soundstage"><div class="stagehead"><span><i></i> <b id="status">就绪</b></span><span>立体声</span></div>
 <div class="waveform" aria-hidden="true" id="waveform"></div><div class="timeline"><span id="elapsed">00:00</span><span>00:10</span></div></div>
 <div class="transport" id="transportRow" hidden><button id="playBtn" class="primary"></button><button id="muteBtn" class="soundbtn" aria-label="静音" title="静音"><svg><use href="#vol"/></svg></button></div></article>
-<article class="choices panel"><div class="cardhead"><span class="eyebrow" id="choiceEyebrow"><i></i> <span id="choiceEyebrowText">GUESS THE SONG</span></span><span class="choicetag">四选一</span></div><h3>这是哪首歌？</h3><div id="options"></div><div id="answerFoot"><span id="feedback" role="status">听原唱，选出你的答案。</span><button id="skipBtn" class="textbtn">跳过此题<svg><use href="#skip"/></svg></button></div></article>
+<article class="choices panel"><div class="cardhead"><span class="eyebrow" id="choiceEyebrow"><i></i> <span id="choiceEyebrowText">猜歌</span></span><span class="choicetag">四选一</span></div><h3>这是哪首歌？</h3><div id="options"></div><div id="answerFoot"><span id="feedback" role="status">听原唱，选出你的答案。</span><button id="skipBtn" class="textbtn">跳过此题<svg><use href="#skip"/></svg></button></div></article>
 </div></section>
-<footer><span><svg><use href="#phones"/></svg>原唱试听来自 Deezer · 需联网</span><span>EASON CHAN FM <b>✳</b></span></footer>
+<footer><span><svg><use href="#phones"/></svg>原唱试听来自 Deezer · 需联网</span><span>陈奕迅电台 <b>✳</b></span></footer>
 </main>
-<dialog id="modal"><div class="modalhead"><span class="eyebrow"><i></i> BLIND TEST FM</span><button id="close" aria-label="关闭">×</button></div><div id="modalContent"></div></dialog>
+<dialog id="modal"><div class="modalhead"><span class="eyebrow"><i></i> 盲听电台</span><button id="close" aria-label="关闭">×</button></div><div id="modalContent"></div></dialog>
 <script src="music.js?v=mobile2"></script><script src="game.js?v=mobile2"></script>
 </body></html>
