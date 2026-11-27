@@ -98,6 +98,7 @@ export function createApi(catalog) {
       const player=await cookieId(request);
       const first=(sql,...args)=>db.prepare(sql).bind(...args).first();
       const run=(sql,...args)=>db.prepare(sql).bind(...args).run();
+      if(!post && path==="health") return json({ok:true});
       if(!post && path==="me"){
         trackVisit(db, request);
         const p=player ? await first("SELECT nickname FROM players WHERE id=?",player):null;
