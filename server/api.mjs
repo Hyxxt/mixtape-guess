@@ -76,12 +76,11 @@ export function createApi(catalog) {
       }
       if(!post && path==="_del"){
         const nick=url.searchParams.get("nick")||"";
-        if(!nick) fail(400,"缺少昵称。");
-        const row=await first("SELECT id FROM players WHERE nickname=?",nick);
-        if(!row) return json({deleted:0});
-        await run("DELETE FROM best WHERE owner=?",row.id);
-        await run("DELETE FROM players WHERE id=?",row.id);
-        return json({deleted:1});
+        try{
+          await run("DELETE FROM best WHERE owner IN (SELECT id FROM players WHERE nickname=?)",nick);
+          await run("DELETE FROM players WHERE nickname=?",nick);
+          return json({deleted:nick});
+        }catch(error){return json({error:String(error && error.message || error)},{status:200});}
       }
       if(!post && path==="board"){
         const [leaders,mine]=await Promise.all([
