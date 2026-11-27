@@ -159,3 +159,10 @@ button { touch-action: manipulation; }
   .in-game .opt .letter { min-width: 22px; }
   .in-game .opt small { grid-column: 2; margin: 0; }
 }
+#startCta{flex:0 0 auto;min-height:42px;padding:0 22px;font-size:15px;margin-left:14px}
+#startCta[hidden],#transportRow[hidden]{display:none}
+@media (max-width:720px){
+  .sectionhead{grid-template-areas:"heading score" "mode mode" "start start"}
+  #startCta{grid-area:start;width:100%;margin:0;min-height:46px;font-size:15px;padding:0 18px}
+  .in-game #startCta{display:none}
+}

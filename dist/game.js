@@ -132,6 +132,8 @@ function setModeUI() {
     $(id).setAttribute("aria-pressed",String(mode===id));
   }
   $("modeTitle").textContent=isRanked() ? "限时排名赛" : "自由练习";
+  $("heroTagline").textContent=isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "每局 5 首，可以反复听，猜中就得 100 分。";
+  $("startCta").textContent=isRanked() ? "开始排名赛" : "开始练习";
   $("roundCount").textContent=String(total());
   $("track").textContent="TRACK "+pad((question?.index || 0)+1)+" / "+pad(total());
   $("points").textContent=String(score).padStart(3,"0");
@@ -140,6 +142,8 @@ function showHome() {
   document.body.classList.remove("in-game");
   setModeUI();newWave(0);
   $("elapsed").textContent="00:00";
+  $("startCta").hidden=false;
+  $("transportRow").hidden=true;
   $("choiceEyebrowText").textContent="HOW TO PLAY";
   document.querySelector(".choices h3").textContent="计分规则";
   $("mystery").textContent=isRanked() ? "十秒猜歌挑战" : "原唱自由练习";
@@ -205,6 +209,8 @@ function timedLoad(q,parent,priority="auto") {
 }
 function showQuestion(q) {
   document.body.classList.add("in-game");
+  $("startCta").hidden=true;
+  $("transportRow").hidden=false;
   $("choiceEyebrowText").textContent="GUESS THE SONG";
   document.querySelector(".choices h3").textContent="这是哪首歌？";
   question=q;currentResult=null;picked=null;activeAnswer=null;progress=0;startedAt=0;clip=null;phase="loading";
@@ -489,6 +495,11 @@ $("board").onclick=showBoard;
 $("history").onclick=showHistory;
 $("profile").onclick=()=>profileForm();
 $("helpBtn").onclick=()=>showDialog("玩法说明",node("p","排名赛每局 10 题，每题限时 10 秒。第 1 秒内答对得 10 分，第 2 秒得 9 分，依次递减，第 10 秒得 1 分。答错、放弃和超时均为 0 分。"),node("p","原唱加载完毕才开始计时。排名赛播放后不能暂停或重听。练习模式可自由暂停、重听，成绩保存在本机。键盘可用：1-4 或 A-D 选答案，空格播放或重听，Enter 进下一题。"));
+$("startCta").onclick=()=>{
+  if(phase!=="home" && phase!=="finished")return;
+  begin();
+  $("game").scrollIntoView({behavior:"smooth",block:"start"});
+};
 $("muteBtn").onclick=()=>{
   const mute=player.toggleMute(), label=mute?"取消静音":"静音";
   $("muteBtn").innerHTML=icon(mute?"mute":"vol");$("muteBtn").setAttribute("aria-label",label);$("muteBtn").title=label;
