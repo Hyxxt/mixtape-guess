@@ -138,7 +138,10 @@ export function createApi(catalog) {
         }else if(post && path==="start"){
           const next=idx+1<ROUND_SIZE ? view(row,idx+1) : null;
           if(q.start) return json({startAt:q.start,serverNow:now,choices:q.choices,next});
-          q.start=now+400;
+          // Let the client tell us roughly how long its round-trip takes. The
+          // lead only delays the shared start time; it cannot buy answer time.
+          const rtt=Number.isFinite(body.rtt)?Math.min(4000,Math.max(0,body.rtt)):0;
+          q.start=now+Math.max(400,Math.min(2000,Math.round(rtt/2+300)));
           result={startAt:q.start,choices:q.choices,next};
         }else if(post && path==="answer"){
           if(!q.start || arrival<q.start || !Number.isInteger(body.choice) || body.choice < -1 || body.choice>3) fail(400,"本题尚未开始或答案无效。");

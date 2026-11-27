@@ -1,6 +1,8 @@
 FROM node:22-slim
 WORKDIR /app
 COPY . .
+# dist/server/index.js is generated and gitignored; build it inside the image.
+RUN node scripts/build.mjs
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
