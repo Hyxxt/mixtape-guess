@@ -42,6 +42,24 @@ async function dropDemoScores() {
 }
 await dropDemoScores();
 
+// 榜单示例成绩：改昵称、分数、答对题数只需动这一行。
+// 固定 id + ON CONFLICT 让它重启后自动补齐，也不会重复插入。
+const SEED_SCORE = { id: "a".repeat(64), nickname: "黄xx", score: 88, hits: 10 };
+async function seedScore() {
+  try {
+    const now = Date.now();
+    await DB.prepare("INSERT OR IGNORE INTO players(id,nickname,created) VALUES(?,?,?)")
+      .bind(SEED_SCORE.id, SEED_SCORE.nickname, now).run();
+    await DB.prepare(
+      "INSERT INTO best(owner,score,hits,achieved) VALUES(?,?,?,?) " +
+      "ON CONFLICT(owner) DO UPDATE SET score=excluded.score,hits=excluded.hits"
+    ).bind(SEED_SCORE.id, SEED_SCORE.score, SEED_SCORE.hits, now).run();
+  } catch (error) {
+    console.warn("demo score skipped: " + error.message);
+  }
+}
+await seedScore();
+
 function origin(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
   const hostHeader = req.headers["x-forwarded-host"] || req.headers.host || ("127.0.0.1:" + port);
