@@ -60,6 +60,15 @@ async function seedScore() {
 }
 await seedScore();
 
+// 访问统计表：PV 每次一行，fresh=1 表示当天首次出现（算 UV）。
+try {
+  await DB.prepare("CREATE TABLE IF NOT EXISTS visits(id TEXT PRIMARY KEY, at INTEGER NOT NULL, did TEXT NOT NULL, path TEXT NOT NULL, fresh INTEGER NOT NULL)").run();
+  await DB.prepare("CREATE INDEX IF NOT EXISTS visits_at ON visits(at)").run();
+} catch (error) {
+  console.warn("visits table skipped: " + error.message);
+}
+
+
 function origin(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
   const hostHeader = req.headers["x-forwarded-host"] || req.headers.host || ("127.0.0.1:" + port);
