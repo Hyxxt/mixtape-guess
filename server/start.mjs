@@ -15,12 +15,20 @@ const DB = localDb(dbFile);
 // best 表以 owner 为主键，每人只保留最高分一条，所以一个人天然只占一个名次。
 // 固定 id 让重复启动不会插重复；真实玩家分数更高时会自然排到前面。
 const DEMO_SCORES = [
-  { id: "d".repeat(64), nickname: "黄xx",     score: 88, hits: 9 },
-  { id: "c".repeat(64), nickname: "粤语残片", score: 76, hits: 8 },
-  { id: "b".repeat(64), nickname: "十年老粉", score: 62, hits: 7 }
+  { id: "d".repeat(64), nickname: "黄xx", score: 88, hits: 9 }
 ];
+// 早期版本插入过、现在不需要的演示账号，启动时清掉（先删 best 再删 players，外键约束）
+const RETIRED_DEMO_IDS = ["c".repeat(64), "b".repeat(64)];
 function seedDemoScores() {
   const now = Date.now();
+  for (const id of RETIRED_DEMO_IDS) {
+    try {
+      DB.prepare("DELETE FROM best WHERE owner=?").bind(id).run();
+      DB.prepare("DELETE FROM players WHERE id=?").bind(id).run();
+    } catch (error) {
+      console.warn("retired demo cleanup skipped: " + error.message);
+    }
+  }
   for (const player of DEMO_SCORES) {
     try {
       DB.prepare("INSERT OR IGNORE INTO players(id,nickname,created) VALUES(?,?,?)")
