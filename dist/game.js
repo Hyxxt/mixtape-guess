@@ -8,13 +8,14 @@ const practiceHistory = "blind-test-fm.eason.history.v1";
 let mode = "ranked", phase = "home", nickname = "", question = null, clip = null;
 let score = 0, correctCount = 0, picked = null, progress = 0, startedAt = 0;
 let timer, clock, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
-let catalogPromise, pool, practiceSongs, currentResult, lastFailure, modalVersion = 0;
+let catalogPromise, pool, practicePool, practiceSongs, currentResult, lastFailure, modalVersion = 0;
 let activeAnswer, profileReady = false;
 let advanceTimer, reviewHold = false, serverRtt = 0;
-const reviewDuration = 3000;
-// Touch devices get no countdown auto-advance: reading the answer and tapping the
-// Deezer link must stay possible without racing a timer.
-const autoAdvanceEnabled = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+const reviewDuration = coarsePointer ? 4500 : 3000;
+// Auto-advance runs everywhere; hovering or touching the answer footer pauses it so
+// the answer text and the Deezer link stay readable for as long as needed.
+const autoAdvanceEnabled = true;
 const isRanked = () => mode === "ranked";
 const total = () => isRanked() ? 10 : 5;
 const buttons = () => [...$("options").querySelectorAll("button")];
@@ -136,7 +137,7 @@ function setModeUI() {
     $(id).setAttribute("aria-pressed",String(mode===id));
   }
   $("modeTitle").textContent=isRanked() ? "限时排名赛" : "自由练习";
-  $("heroTagline").textContent=isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "每局 5 首，可以反复听，猜中就得 100 分。";
+  $("heroTagline").textContent=isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "经典入门：每局 5 首热门，可以反复听，猜中就得 100 分。";
   $("startCta").textContent=isRanked() ? "开始排名赛" : "开始练习";
   $("roundCount").textContent=String(total());
   $("track").textContent="第 "+pad((question?.index || 0)+1)+" / "+pad(total())+" 首";
@@ -153,9 +154,9 @@ function showHome() {
   document.querySelector(".choices h3").textContent="计分规则";
   $("mystery").textContent=isRanked() ? "十秒猜歌挑战" : "原唱自由练习";
   $("status").textContent="就绪";
-  $("feedback").textContent=isRanked() ? "每局 10 题，答完即可上榜。" : "每局 5 题，可暂停、重听。";
+  $("feedback").textContent=isRanked() ? "每局 10 题，答完即可上榜。" : "经典入门：每局 5 首热门，可暂停、重听。";
   const samples=isRanked() ? [["第 1 秒","10 分"],["第 2 秒","9 分"],["第 10 秒","1 分"],["答错或超时","0 分"]] :
-    [["每局曲目","5 首"],["每题片段","10 秒"],["每题答对","100 分"],["最高得分","500 分"]];
+    [["曲目范围","热门 40 首"],["每题片段","10 秒"],["每题答对","100 分"],["最高得分","500 分"]];
   const lines=samples.map(([key,value])=>{const row=node("div",null,"logrow");row.append(node("span",key),node("b",value));return row;});
   $("options").replaceChildren(...lines);
   playControl(isRanked()?"开始排名赛":"开始练习","play");skipControl("",true);
@@ -204,7 +205,7 @@ async function loadMe() {
 }
 function practiceQuestion(index) {
   const song=practiceSongs[index];
-  const distractors=shuffled(pool.filter(v=>v.name!==song.name));
+  const distractors=shuffled((practicePool||pool).filter(v=>v.name!==song.name));
   const names=[...new Set(distractors.map(v=>v.name))].slice(0,3);
   const choices=shuffled([song.name,...names]);
   return {index,total:5,choices,score,offset:song.offset,previewPath:"/api/preview?id="+song.id,answer:song.name,trackId:song.id};
@@ -259,7 +260,8 @@ async function opening() {
       q=await api("round",{},controller.signal);
     } else {
       pool=await getCatalog();if(token!==generation)return;
-      practiceSongs=shuffled(pool).slice(0,5);
+      practicePool=pool.filter(v=>v.hot);if(practicePool.length<6)practicePool=pool;
+      practiceSongs=shuffled(practicePool).slice(0,5);
       q=practiceQuestion(0);
     }
     if(token!==generation) return;
