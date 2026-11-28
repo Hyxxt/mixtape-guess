@@ -195,7 +195,18 @@ button { touch-action: manipulation; }
 .boardTabs{display:flex;gap:8px;margin-top:6px}
 .boardTabs button{background:#fffefa}
 .boardTabs button[aria-pressed=true]{background:var(--lilac)}
+.boardRanges:not([hidden]){display:flex;gap:8px}
+.boardRanges button{width:auto;padding:0 15px;background:#fffefa;font-size:14px}
+.boardRanges button[aria-pressed=true]{background:#edf7d7}
 .boardMine{padding:8px 12px;background:#edf7d7;border-radius:6px;font-weight:750}
+.roundReview{margin:12px 0 0}
+.roundReview li{padding:10px 0;border-bottom:1px dashed #ccc}
+.roundReviewHeading,.roundReviewControls{display:flex;align-items:baseline;gap:8px}
+.roundReviewHeading{justify-content:space-between}
+.roundReviewHeading strong{overflow-wrap:anywhere}
+.roundReviewHeading b{white-space:nowrap;font-family:var(--mono)}
+.roundReviewMeta,.roundReviewControls span{font-size:13px;color:#595b52}
+.roundReviewControls .textbtn{min-height:36px;color:#5b3aa8}
 .score-hits{margin-left:3px;padding-left:9px;border-left:1px solid #b8b9af;white-space:nowrap}
 #skipBtn.reviewNext{display:none}
 @media(max-width:720px){

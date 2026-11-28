@@ -22,6 +22,13 @@
       "when": 1795862001475,
       "tag": "0002_hot_leaderboard",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795874708962,
+      "tag": "0003_weekly_rankings",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,10 @@ const LIVE_MS = 2 * 60 * 60 * 1000;
 const POINTS_VERSION = 1;
 const FIVE_SECOND_VERSION = 2;
 const HOT_VERSION = 3;
+const RECENT_ROUNDS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 const COOKIE = "eason_player_v1";
 const previewCache = new Map();
 const previewPending = new Map();
@@ -40,6 +44,27 @@ function makeQuestion(song, catalog) {
   const wrong=shuffle(catalog.filter(s=>s.name!==song.name)).slice(0,3);
   return {id:song.id, offset:song.offset, name:song.name, choices:shuffle([song,...wrong].map(s=>s.name)), start:0, clipKey:crypto.randomUUID()};
 }
+async function recentSongIds(db, player, mode, exceptRound=null) {
+  const recent=await db.prepare(`WITH recent AS (
+    SELECT questions FROM games WHERE owner=? AND mode=? AND id IS NOT ?
+    ORDER BY updated DESC,id DESC LIMIT ?
+  ) SELECT DISTINCT json_extract(song.value,'$.id') AS id
+    FROM recent,json_each(recent.questions) song WHERE json_extract(song.value,'$.start')>0`)
+    .bind(player,mode,exceptRound,RECENT_ROUNDS).all();
+  return new Set(recent.results.map(song=>song.id));
+}
+function chooseSongs(pool, recent, count) {
+  const fresh=shuffle(pool.filter(song=>!recent.has(song.id))).slice(0,count);
+  if(fresh.length===count) return fresh;
+  return [...fresh,...shuffle(pool.filter(song=>recent.has(song.id))).slice(0,count-fresh.length)];
+}
+function roundDetails(questions) {
+  return questions.map(q=>{
+    const { earned, elapsedMs=null, choice, outcome }=q.result;
+    return {name:q.name,trackId:q.id,offset:q.offset,earned,elapsedMs,
+      selected:q.choices[choice] ?? null,outcome:outcome ?? (earned>0 ? "correct" : "unscored")};
+  });
+}
 function clipView(round,index,q) {
   const suffix=q.clipKey ? "&v="+q.clipKey : "";
   return {round,index,total:ROUND_SIZE,choices:[null,null,null,null],offset:q.offset,
@@ -71,10 +96,15 @@ function scoreTable(version) {
   if(version===HOT_VERSION) return "hot_best";
   return version===FIVE_SECOND_VERSION ? "points_best" : "best";
 }
-const standings = version => `SELECT b.owner,p.nickname,b.score,b.hits AS correct,b.achieved,
+function shanghaiWeekStart(timestamp) {
+  const local=new Date(timestamp+SHANGHAI_OFFSET_MS);
+  const daysSinceMonday=(local.getUTCDay()+6)%7;
+  return Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate()-daysSinceMonday)-SHANGHAI_OFFSET_MS;
+}
+const standings = (version, weekly) => `SELECT b.owner,p.nickname,b.score,b.hits AS correct,b.achieved,
   RANK() OVER (ORDER BY b.score DESC,b.hits DESC) AS rank
-  FROM ${scoreTable(version)} b JOIN players p ON p.id=b.owner
-  ${version===1 ? "WHERE b.owner NOT IN ("+["a","b","c","d"].map(id=>"'"+id.repeat(64)+"'").join(",")+")" : ""}`;
+  FROM ${weekly ? "weekly_best" : scoreTable(version)} b JOIN players p ON p.id=b.owner
+  ${weekly ? "WHERE b.week_start=?" : version===POINTS_VERSION ? "WHERE b.owner NOT IN ("+["a","b","c","d"].map(id=>"'"+id.repeat(64)+"'").join(",")+")" : ""}`;
 // 访问统计：只记页面级请求（前端每次加载都会调 /api/me）。
 // 设备标识用 IP+UA 的哈希，不存明文；写入 fire-and-forget，不拖慢响应。
 // fresh 由数据库判定（当天该设备是否已出现过），所以容器重启也不会重复计 UV。
@@ -93,7 +123,7 @@ function trackVisit(db, request) {
     if (!ua || CRAWLER.test(ua)) return;
     const did = deviceKey(request);
     const now = Date.now();
-    const dayStart = Math.floor(now / 86400000) * 86400000;
+    const dayStart = Math.floor(now / DAY_MS) * DAY_MS;
     Promise.resolve(
       db.prepare(
         "INSERT INTO visits(id,at,did,path,fresh) VALUES(?,?,?,?," +
@@ -135,12 +165,16 @@ export function createApi(catalog) {
         let version=POINTS_VERSION;
         if(season==="hot") version=HOT_VERSION;
         if(season==="five-second" || season==="points") version=FIVE_SECOND_VERSION;
-        const ranking=standings(version);
+        const weekly=season==="weekly";
+        const weekStart=shanghaiWeekStart(arrival);
+        const args=weekly ? [weekStart] : [];
+        const ranking=standings(version,weekly);
         const [leaders,mine]=await Promise.all([
-          db.prepare("SELECT * FROM ("+ranking+") ORDER BY rank,achieved,owner LIMIT 100").all(),
-          player ? first("SELECT rank,score FROM ("+ranking+") WHERE owner=?",player):null
+          db.prepare("SELECT * FROM ("+ranking+") ORDER BY rank,achieved,owner LIMIT 100").bind(...args).all(),
+          player ? first("SELECT rank,score FROM ("+ranking+") WHERE owner=?",...args,player):null
         ]);
-        return json({rows:leaders.results.map(({nickname,score,correct,rank})=>({nickname,score,correct,rank})),mine});
+        const rows=leaders.results.map(({nickname,score,correct,rank})=>({nickname,score,correct,rank}));
+        return json(weekly ? {rows,mine,weekStart,weekEnd:weekStart+WEEK_MS} : {rows,mine});
       }
       if(!post && path==="preview"){
         const id=Number(url.searchParams.get("id"));
@@ -169,11 +203,14 @@ export function createApi(catalog) {
           LEFT JOIN games g ON g.owner=p.id AND g.mode=? AND g.finished=0 WHERE p.id=?`,mode,player);
         if(!active) fail(401,"请先设置参赛昵称。");
         if(active.id && now-active.updated<=LIVE_MS) return json(view(active));
-        const questions=shuffle(pool).slice(0,ROUND_SIZE).map(s=>makeQuestion(s,pool));
+        const recent=await recentSongIds(db,player,mode);
+        const questions=chooseSongs(pool,recent,ROUND_SIZE).map(s=>makeQuestion(s,pool));
         if(questions.length!==ROUND_SIZE) fail(503,"题库正在准备。");
         const id=crypto.randomUUID();
         const [,created]=await db.batch([
-          db.prepare("DELETE FROM games WHERE owner=? AND updated<?").bind(player,now-LIVE_MS),
+          db.prepare(`DELETE FROM games WHERE owner=? AND mode=? AND updated<? AND (finished=0 OR id NOT IN (
+            SELECT id FROM games WHERE owner=? AND mode=? AND finished=1 ORDER BY updated DESC,id DESC LIMIT ?
+          ))`).bind(player,mode,now-LIVE_MS,player,mode,RECENT_ROUNDS),
           db.prepare(`INSERT OR IGNORE INTO games(id,owner,questions,cursor,version,score,hits,updated,finished,scoring_version,mode)
             VALUES(?,?,?,0,0,0,0,?,0,?,?)`).bind(id,player,JSON.stringify(questions),now,scoringVersion,mode)
         ]);
@@ -207,7 +244,8 @@ export function createApi(catalog) {
           const pool=row.mode==="hot" ? hotCatalog : catalog;
           const choices=pool.filter(x=>!excluded.has(x.id));
           if(!choices.length) fail(409,"暂无替补题，请重试。");
-          questions[idx]=makeQuestion(choices[Math.floor(Math.random()*choices.length)],pool);
+          const recent=await recentSongIds(db,player,row.mode,id);
+          questions[idx]=makeQuestion(chooseSongs(choices,recent,1)[0],pool);
         }else if(post && path==="start"){
           const next=idx+1<ROUND_SIZE ? clipView(row.id,idx+1,questions[idx+1]) : null;
           if(q.start) return json({startAt:q.start,serverNow:now,processingMs:now-arrival,choices:q.choices,next});
@@ -219,14 +257,19 @@ export function createApi(catalog) {
         }else if(post && path==="answer"){
           if(!q.start || arrival<q.start || !Number.isInteger(body.choice) || body.choice < -1 || body.choice>3) fail(400,"本题尚未开始或答案无效。");
           const correctIndex=q.choices.indexOf(q.name);
-          const earned=earnedPoints(arrival-q.start,body.choice===correctIndex,row.scoring_version);
+          const elapsedMs=arrival-q.start;
+          const earned=earnedPoints(elapsedMs,body.choice===correctIndex,row.scoring_version);
+          const outcome=earned>0 ? "correct" : row.scoring_version!==HOT_VERSION && elapsedMs>10000
+            ? "timeout" : body.choice===-1 ? "skipped" : "wrong";
           row.score+=earned;
           row.hits+=Number(earned>0);
           row.cursor++;
           row.finished=Number(row.cursor===ROUND_SIZE);
           const next=row.finished ? null : view(row,questions[row.cursor]);
-          result=q.result={correctIndex,earned,score:row.score,correct:row.hits,done:!!row.finished,name:q.name,trackId:q.id,next};
+          result=q.result={correctIndex,earned,score:row.score,correct:row.hits,done:!!row.finished,name:q.name,trackId:q.id,next,
+            elapsedMs,choice:body.choice,outcome};
           insertBest=!!row.finished;
+          if(insertBest) result.details=roundDetails(questions);
         }else fail(404,"没有此操作。");
         const updated=JSON.stringify(questions);
         const write=db.prepare("UPDATE games SET questions=?,cursor=?,score=?,hits=?,finished=?,updated=?,version=version+1 WHERE id=? AND version=?")
@@ -237,6 +280,14 @@ export function createApi(catalog) {
           SELECT owner,score,hits,updated FROM games WHERE id=? AND finished=1
           ON CONFLICT(owner) DO UPDATE SET score=excluded.score,hits=excluded.hits,achieved=excluded.achieved
           WHERE excluded.score>${best}.score OR (excluded.score=${best}.score AND excluded.hits>${best}.hits)`).bind(id));
+        if(insertBest && row.scoring_version===POINTS_VERSION){
+          const start=shanghaiWeekStart(now);
+          queries.push(db.prepare(`INSERT INTO weekly_best(week_start,owner,score,hits,achieved)
+            SELECT ?,owner,score,hits,updated FROM games WHERE id=? AND finished=1 AND updated>=? AND updated<?
+            ON CONFLICT(week_start,owner) DO UPDATE SET score=excluded.score,hits=excluded.hits,achieved=excluded.achieved
+            WHERE excluded.score>weekly_best.score OR (excluded.score=weekly_best.score AND excluded.hits>weekly_best.hits)`)
+            .bind(start,id,start,start+WEEK_MS));
+        }
         const outcome=await db.batch(queries);
         if(outcome[0].meta.changes){
           if(path==="start") {

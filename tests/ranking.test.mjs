@@ -18,7 +18,9 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
   const DB=localDb(":memory:");
   const api=createApi(Array.from({length:15},(_,i)=>({name:"Song "+i,id:i+1,offset:3})));
   const origin="https://quiz.example";
-  const originalTime=Date.now;let now=2000000000000;
+  const originalTime=Date.now;
+  const weekEnd=Date.parse("2026-11-29T16:00:00Z");
+  let now=weekEnd-300000;
   Date.now=()=>now;
   async function send(route,body,cookie=""){
     const response=await api(new Request(origin+"/api/"+route,{method:body?"POST":"GET",headers:{Origin:origin,Cookie:cookie,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined}),{DB});
@@ -65,7 +67,15 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
         assert.equal(outcome.next.correct,outcome.correct);
         assert.equal(outcome.next.previewPath,start.next.previewPath);
         if(index===0) assert.deepEqual((await send("round",{},cookie)).data,outcome.next);
-      }else assert.equal(outcome.next,null);
+      }else{
+        assert.equal(outcome.next,null);
+        assert.equal(outcome.details.length,10);
+        assert.equal(outcome.details.reduce((sum,answer)=>sum+answer.earned,0),outcome.score);
+        assert.deepEqual(outcome.details[index],{
+          name:secret.name,trackId:secret.id,offset:secret.offset,earned:outcome.earned,
+          elapsedMs:ms,selected:secret.name,outcome:ms>10000?"timeout":"correct"
+        });
+      }
     }
     assert.equal(picks.size,10);
     return outcome.score;
@@ -92,6 +102,18 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     assert.deepEqual((await send("board?season=ranked")).data,board);
     assert.deepEqual((await send("board?season=legacy")).data,board);
     assert.deepEqual((await send("board?season=points",null,a)).data,historical);
+    now=weekEnd-1;
+    const weekly=(await send("board?season=weekly",null,a)).data;
+    assert.equal(weekly.weekStart,Date.parse("2026-11-22T16:00:00Z"));
+    assert.equal(weekly.weekEnd,weekEnd);
+    assert.deepEqual(weekly.rows,board.rows);
+    assert.deepEqual(weekly.mine,{score:100,rank:1});
+    now=weekEnd;
+    assert.deepEqual((await send("board?season=weekly",null,a)).data,
+      {rows:[],mine:null,weekStart:weekly.weekEnd,weekEnd:Date.parse("2026-12-06T16:00:00Z")});
+    assert.equal(await play(a,2000),90);
+    assert.deepEqual((await send("board?season=weekly",null,a)).data.mine,{score:90,rank:1});
+    assert.equal((await send("board",null,a)).data.mine.score,100);
   } finally {Date.now=originalTime;}
 });
 test("start lead follows reported RTT and stays idempotent",async()=>{
@@ -113,7 +135,7 @@ test("start lead follows reported RTT and stays idempotent",async()=>{
 
 test("hot rounds share player nicknames and keep independent progress and rankings",async()=>{
   const DB=localDb(":memory:");
-  const catalog=Array.from({length:16},(_,i)=>({name:"Song "+i,id:i+1,offset:3,hot:i<12}));
+  const catalog=Array.from({length:45},(_,i)=>({name:"Song "+i,id:i+1,offset:3,hot:i<40}));
   const api=createApi(catalog);
   const origin="https://quiz.example";
   const originalTime=Date.now;
@@ -157,17 +179,40 @@ test("hot rounds share player nicknames and keep independent progress and rankin
       assert.equal(answer.data.earned,earned);
       total+=earned;
       assert.equal(answer.data.score,total);
+      if(index===9) assert.equal(answer.data.details[index].outcome,"skipped");
       hot=answer.data.next;
     }
     assert.equal(total,57);
     assert.equal(hot,null);
     assert.deepEqual((await send("round",{},cookie)).data,ranked);
     assert.deepEqual((await send("board",null,cookie)).data,{rows:[],mine:null});
+    assert.deepEqual((await send("board?season=weekly",null,cookie)).data.rows,[]);
     const board=(await send("board?season=hot",null,cookie)).data;
     assert.deepEqual(board.rows.map(r=>[r.nickname,r.score,r.rank]),[["黄xx",100,1],["热歌玩家",57,2]]);
     assert.deepEqual(board.mine,{score:57,rank:2});
     assert.deepEqual((await send("board?season=hot")).data,{rows:board.rows,mine:null});
     await send("join",{nickname:"新昵称"},cookie);
     assert.equal((await send("board?season=hot")).data.rows[1].nickname,"新昵称");
+
+    const seen=new Set(questions.map(question=>question.id));
+    const firstSongs=[...seen].sort((a,b)=>a-b);
+    for(let roundNumber=2;roundNumber<=5;roundNumber++){
+      now+=86400000;
+      const round=(await send("round",{mode:"hot"},cookie)).data.round;
+      const songs=JSON.parse(DB.prepare("SELECT questions FROM games WHERE id=?").bind(round).first().questions);
+      if(roundNumber===5){
+        assert.deepEqual(songs.map(song=>song.id).sort((a,b)=>a-b),firstSongs);
+        break;
+      }
+      for(const [index,song] of songs.entries()){
+        assert.equal(seen.has(song.id),false);
+        seen.add(song.id);
+        const payload={round,index};
+        const start=(await send("start",payload,cookie)).data;
+        now=start.startAt+2000;
+        assert.equal((await send("answer",{...payload,choice:-1},cookie)).status,200);
+      }
+    }
+    assert.equal(DB.prepare("SELECT COUNT(*) AS count FROM games WHERE mode='hot'").first().count,4);
   } finally {Date.now=originalTime;}
 });

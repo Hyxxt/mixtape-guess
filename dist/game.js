@@ -13,6 +13,7 @@ let timer, rafId = 0, barIndex = 0, generation = 0, nextPrepared = null, control
 let hasPlayed = false, currentResult, lastFailure, modalVersion = 0;
 let activeAnswer, profileRequest, profileReady = false, scoringVersion = 1;
 let advanceTimer, reviewHold = false, serverRtt = 0;
+let reviewPlayback;
 
 const reviewDuration = 2400;
 const autoAdvanceEnabled = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
@@ -67,14 +68,17 @@ function api(path, data, parent, timeoutMs) {
 
 function showDialog(title, ...content) {
   clearTimeout(advanceTimer);
+  stopReviewPlayback();
   $("playBtn")?.classList.remove("auto-next");
   modalVersion++;
   $("modalContent").replaceChildren(node("h2", title), ...content);
   if (!modal.open) modal.showModal();
+  modal.scrollTop = 0;
   return modalVersion;
 }
 
 function closeDialog() {
+  stopReviewPlayback();
   modalVersion++;
   if (modal.open) modal.close();
 }
@@ -779,6 +783,64 @@ async function shareResult(status) {
   }
 }
 
+function stopReviewPlayback() {
+  if (!reviewPlayback) return;
+  const { controller, button, status } = reviewPlayback;
+  reviewPlayback = null;
+  controller.abort();
+  player.stop();
+  button.textContent = "重听";
+  status.textContent = "";
+}
+
+async function replayAnswer(answer, button, status) {
+  const toggling = reviewPlayback?.button === button;
+  stopReviewPlayback();
+  if (toggling) return;
+  const request = { controller: new AbortController(), button, status };
+  reviewPlayback = request;
+  button.textContent = "取消";
+  status.textContent = "正在准备试听…";
+  try {
+    await player.unlock();
+    if (reviewPlayback !== request) return;
+    const audio = await timedLoad({ previewPath: "/api/preview?id=" + answer.trackId, offset: answer.offset }, request.controller.signal, "high");
+    if (reviewPlayback !== request) return;
+    button.textContent = "停止";
+    status.textContent = "播放中";
+    player.start(audio, 0, 0, () => {
+      if (reviewPlayback === request) stopReviewPlayback();
+    });
+  } catch {
+    if (reviewPlayback !== request) return;
+    stopReviewPlayback();
+    status.textContent = "试听暂时无法加载，可以重试。";
+  }
+}
+
+function showRoundReview(answers) {
+  const labels = { correct: "答对", wrong: "答错", skipped: "跳过", timeout: "超时", unscored: "0 分" };
+  const list = node("ol", null, "roundReview");
+  for (const answer of answers) {
+    const item = node("li");
+    const heading = node("div", null, "roundReviewHeading");
+    heading.append(node("strong", answer.name), node("b", "+" + answer.earned + " 分"));
+    const stats = [labels[answer.outcome]];
+    if (Number.isFinite(answer.elapsedMs)) stats.push(answer.elapsedMs / 1000 + " 秒");
+    if (answer.selected && answer.outcome === "wrong") stats.push("你选了《" + answer.selected + "》");
+    const controls = node("div", null, "roundReviewControls");
+    const status = node("span");
+    status.setAttribute("role", "status");
+    const replay = node("button", "重听", "textbtn");
+    replay.type = "button";
+    replay.onclick = () => replayAnswer(answer, replay, status);
+    controls.append(replay, status);
+    item.append(heading, node("div", stats.join(" · "), "roundReviewMeta"), controls);
+    list.append(item);
+  }
+  showDialog("逐题成绩单", node("p", "用时从本题开始算到服务器收到答案。"), action("返回成绩", showResults), list);
+}
+
 function showResults() {
   const line = node("div", String(score), "bigscore");
   line.append(node("small", " / 100 分"));
@@ -790,7 +852,9 @@ function showResults() {
   shareStatus.setAttribute("role", "status");
   const share = action("分享战绩", () => shareResult(shareStatus));
   share.classList.add("secondary");
-  const parts = [line, details, shareStatus, share, action("再来一局", () => { closeDialog(); begin(); })];
+  const parts = [line, details];
+  if (currentResult?.details?.length) parts.push(action("逐题成绩单", () => showRoundReview(currentResult.details)));
+  parts.push(shareStatus, share, action("再来一局", () => { closeDialog(); begin(); }));
   parts.push(action(isRanked() ? "查看排行榜" : "查看热歌榜", () => showBoard(season)));
   const version = showDialog(modeLabel() + "成绩", ...parts);
   api("board?season=" + season).then(board => {
@@ -814,31 +878,47 @@ function showBoard(season = "ranked") {
   const tabs = node("div", null, "boardTabs");
   tabs.setAttribute("role", "group");
   tabs.setAttribute("aria-label", "排行榜选择");
+  const ranges = node("div", null, "boardRanges");
+  ranges.setAttribute("role", "group");
+  ranges.setAttribute("aria-label", "积分榜时间范围");
   const content = node("div");
   const status = node("p", "正在读取排行榜…");
   status.setAttribute("role", "status");
-  const version = showDialog("排行榜", tabs, status, content);
+  const version = showDialog("排行榜", tabs, ranges, status, content);
   let requestId = 0;
+  let range = "ranked";
   const choices = [["ranked", "积分榜"], ["hot", "热歌榜"], ["five-second", "历史榜"]].map(([key, label]) => {
     const button = action(label, () => loadBoard(key));
     tabs.append(button);
+    return { key, button };
+  });
+  const rangeChoices = [["ranked", "总榜"], ["weekly", "本周"]].map(([key, label]) => {
+    const button = action(label, () => { range = key; loadBoard("ranked"); });
+    ranges.append(button);
     return { key, button };
   });
 
   async function loadBoard(key) {
     const id = ++requestId;
     for (const entry of choices) entry.button.setAttribute("aria-pressed", String(key === entry.key));
+    ranges.hidden = key !== "ranked";
+    for (const entry of rangeChoices) entry.button.setAttribute("aria-pressed", String(range === entry.key));
+    const boardKey = key === "ranked" ? range : key;
     content.replaceChildren();
     status.textContent = "正在读取排行榜…";
     status.hidden = false;
     try {
-      const board = await api("board?season=" + key);
+      const board = await api("board?season=" + boardKey);
       if (version !== modalVersion || !modal.open || id !== requestId) return;
       status.hidden = true;
+      if (boardKey === "weekly") {
+        const date = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" });
+        content.append(node("p", `${date.format(board.weekStart)}–${date.format(board.weekEnd - 1)} · 北京时间周一换榜`));
+      }
       if (key === "five-second") content.append(node("p", "采用前 5 秒答对得 10 分规则的历史成绩。"));
       if (board.mine) content.append(node("p", "我的最高分 " + board.mine.score + " 分 · 第 " + board.mine.rank + " 名", "boardMine"));
       if (!board.rows.length) {
-        const message = key === "five-second" ? "历史榜暂无成绩。" : "完成一局挑战即可上榜。";
+        const message = key === "five-second" ? "历史榜暂无成绩。" : boardKey === "weekly" ? "本周暂无成绩，完成一局积分挑战即可上榜。" : "完成一局挑战即可上榜。";
         content.append(node("p", message));
         return;
       }
@@ -946,14 +1026,17 @@ $("lobby").onclick = () => { closeDialog(); $("game").scrollIntoView({ block: "n
 $("close").onclick = closeDialog;
 watchReviewHold($("answerFoot"));
 watchReviewHold($("playBtn"));
-modal.addEventListener("close", scheduleAdvance);
+modal.addEventListener("close", () => { stopReviewPlayback(); scheduleAdvance(); });
 modal.addEventListener("click", e => {
   if (e.target !== modal) return;
   const rect = modal.getBoundingClientRect();
   if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) closeDialog();
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) pauseHot();
+  if (document.hidden) {
+    stopReviewPlayback();
+    pauseHot();
+  }
   else if (isRanked() && (phase === "scheduled" || phase === "live")) {
     cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(tick);
