@@ -26,7 +26,7 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     const response=await api(new Request(origin+"/api/"+route,{method:body?"POST":"GET",headers:{Origin:origin,Cookie:cookie,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined}),{DB});
     return {status:response.status,data:await response.json(),cookie:response.headers.get("Set-Cookie")?.split(";")[0]};
   }
-  async function play(cookie,ms,version=1){
+  async function play(cookie,ms,version=1,msToNextPoint){
     let q=(await send("round",{},cookie)).data;
     const round=q.round; const picks=new Set();let outcome;
     assert.equal(q.scoringVersion,1);
@@ -73,7 +73,8 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
         assert.equal(outcome.details.reduce((sum,answer)=>sum+answer.earned,0),outcome.score);
         assert.deepEqual(outcome.details[index],{
           name:secret.name,trackId:secret.id,offset:secret.offset,earned:outcome.earned,
-          elapsedMs:ms,selected:secret.name,outcome:ms>10000?"timeout":"correct"
+          elapsedMs:ms,selected:secret.name,outcome:ms>10000?"timeout":"correct",
+          ...(msToNextPoint===undefined ? {} : {msToNextPoint})
         });
       }
     }
@@ -85,7 +86,7 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     const b=(await send("join",{nickname:"B"})).cookie;
     assert.notEqual(a,b);
     assert.equal(await play(a,950),100);
-    assert.equal(await play(b,1260),90);
+    assert.equal(await play(b,1260,1,260),90);
     assert.equal(await play(a,11000),0);
     let board=(await send("board",null,b)).data;
     assert.deepEqual(board.rows.map(r=>[r.nickname,r.score,r.rank]),[["A",100,1],["黄xx",92,2],["B",90,3]]);
@@ -111,7 +112,7 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     now=weekEnd;
     assert.deepEqual((await send("board?season=weekly",null,a)).data,
       {rows:[],mine:null,weekStart:weekly.weekEnd,weekEnd:Date.parse("2026-12-06T16:00:00Z")});
-    assert.equal(await play(a,2000),90);
+    assert.equal(await play(a,2000,1,1000),90);
     assert.deepEqual((await send("board?season=weekly",null,a)).data.mine,{score:90,rank:1});
     assert.equal((await send("board",null,a)).data.mine.score,100);
   } finally {Date.now=originalTime;}

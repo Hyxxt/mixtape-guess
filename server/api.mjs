@@ -3,6 +3,8 @@ const LIVE_MS = 2 * 60 * 60 * 1000;
 const POINTS_VERSION = 1;
 const FIVE_SECOND_VERSION = 2;
 const HOT_VERSION = 3;
+const SCORE_STEP_MS = 1000;
+const MAX_QUESTION_SCORE = 10;
 const MAX_NETWORK_CREDIT_MS = 200;
 const MAX_TIMING_SAMPLE_MS = 1200;
 const MAX_TIMING_ROUNDS = 1024;
@@ -38,10 +40,10 @@ async function hash(value) {
 }
 export function earnedPoints(elapsed,correct,scoringVersion=POINTS_VERSION) {
   if(!correct || !Number.isFinite(elapsed) || elapsed<0) return 0;
-  const seconds=Math.ceil(elapsed/1000);
-  if(scoringVersion===HOT_VERSION) return Math.max(1,10-Math.max(0,seconds-2));
+  const seconds=Math.ceil(elapsed/SCORE_STEP_MS);
+  if(scoringVersion===HOT_VERSION) return Math.max(1,MAX_QUESTION_SCORE-Math.max(0,seconds-2));
   if(elapsed>10000) return 0;
-  return 10-Math.max(0,seconds-(scoringVersion===FIVE_SECOND_VERSION ? 5 : 1));
+  return MAX_QUESTION_SCORE-Math.max(0,seconds-(scoringVersion===FIVE_SECOND_VERSION ? 5 : 1));
 }
 function makeQuestion(song, catalog) {
   const wrong=shuffle(catalog.filter(s=>s.name!==song.name)).slice(0,3);
@@ -61,12 +63,17 @@ function chooseSongs(pool, recent, count) {
   if(fresh.length===count) return fresh;
   return [...fresh,...shuffle(pool.filter(song=>recent.has(song.id))).slice(0,count-fresh.length)];
 }
-function roundDetails(questions) {
+function roundDetails(questions, scoringVersion) {
+  const showSpeedTips=scoringVersion===POINTS_VERSION && questions.every(q=>q.result.earned>0);
   return questions.map(q=>{
     const { earned, elapsedMs=null, choice, outcome, networkCreditMs }=q.result;
+    const nextPointDeadline=(MAX_QUESTION_SCORE-earned)*SCORE_STEP_MS;
+    const msToNextPoint=showSpeedTips && earned<MAX_QUESTION_SCORE && Number.isFinite(elapsedMs)
+      ? elapsedMs-nextPointDeadline : 0;
     return {name:q.name,trackId:q.id,offset:q.offset,earned,elapsedMs,
       selected:q.choices[choice] ?? null,outcome:outcome ?? (earned>0 ? "correct" : "unscored"),
-      ...(networkCreditMs>0 ? {networkCreditMs} : {})};
+      ...(networkCreditMs>0 ? {networkCreditMs} : {}),
+      ...(msToNextPoint>0 ? {msToNextPoint} : {})};
   });
 }
 function clipView(round,index,q) {
@@ -288,7 +295,7 @@ export function createApi(catalog) {
           result=q.result={correctIndex,earned,score:row.score,correct:row.hits,done:!!row.finished,name:q.name,trackId:q.id,next,
             elapsedMs,choice:body.choice,outcome,...(networkCreditMs>0 ? {networkCreditMs} : {})};
           insertBest=!!row.finished;
-          if(insertBest) result.details=roundDetails(questions);
+          if(insertBest) result.details=roundDetails(questions,row.scoring_version);
         }else fail(404,"没有此操作。");
         const updated=JSON.stringify(questions);
         const write=db.prepare("UPDATE games SET questions=?,cursor=?,score=?,hits=?,finished=?,updated=?,version=version+1 WHERE id=? AND version=?")

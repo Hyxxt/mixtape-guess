@@ -833,6 +833,30 @@ async function replayAnswer(answer, button, status) {
   }
 }
 
+function speedTipText(answer) {
+  return `再快 ${answer.msToNextPoint} 毫秒可多拿 1 分`;
+}
+
+function speedTipsCard(answers) {
+  const closest = answers.map((answer, index) => ({ answer, index }))
+    .filter(({ answer }) => answer.msToNextPoint > 0)
+    .sort((a, b) => a.answer.msToNextPoint - b.answer.msToNextPoint);
+  if (!closest.length) return null;
+  const card = node("section", null, "speedTips");
+  const list = node("ul");
+  const highlights = closest.slice(0, 3);
+  for (const { answer, index } of highlights) {
+    const item = node("li");
+    item.append(node("strong", `第 ${index + 1} 题 · ${answer.name}`), node("span", speedTipText(answer), "speedTip"));
+    list.append(item);
+  }
+  card.append(node("h3", "最接近多拿 1 分的题"), list);
+  if (closest.length > highlights.length) {
+    card.append(node("p", `还有 ${closest.length - highlights.length} 题的提速目标见逐题成绩单。`));
+  }
+  return card;
+}
+
 function showRoundReview(answers) {
   const labels = { correct: "答对", wrong: "答错", skipped: "跳过", timeout: "超时", unscored: "0 分" };
   const list = node("ol", null, "roundReview");
@@ -851,7 +875,9 @@ function showRoundReview(answers) {
     replay.type = "button";
     replay.onclick = () => replayAnswer(answer, replay, status);
     controls.append(replay, status);
-    item.append(heading, node("div", stats.join(" · "), "roundReviewMeta"), controls);
+    item.append(heading, node("div", stats.join(" · "), "roundReviewMeta"));
+    if (answer.msToNextPoint > 0) item.append(node("div", speedTipText(answer), "speedTip"));
+    item.append(controls);
     list.append(item);
   }
   const timingNote = isRanked() && scoringVersion === 1
@@ -872,7 +898,12 @@ function showResults() {
   const share = action("分享战绩", () => shareResult(shareStatus));
   share.classList.add("secondary");
   const parts = [line, details];
-  if (currentResult?.details?.length) parts.push(action("逐题成绩单", () => showRoundReview(currentResult.details)));
+  const answers = currentResult?.details;
+  if (answers?.length) {
+    const speedTips = speedTipsCard(answers);
+    if (speedTips) parts.push(speedTips);
+    parts.push(action("逐题成绩单", () => showRoundReview(answers)));
+  }
   parts.push(shareStatus, share, action("再来一局", () => { closeDialog(); begin(); }));
   parts.push(action(isRanked() ? "查看排行榜" : "查看热歌榜", () => showBoard(season)));
   const version = showDialog(modeLabel() + "成绩", ...parts);

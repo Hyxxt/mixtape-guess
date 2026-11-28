@@ -199,6 +199,13 @@ button { touch-action: manipulation; }
 .boardRanges button{width:auto;padding:0 15px;background:#fffefa;font-size:14px}
 .boardRanges button[aria-pressed=true]{background:#edf7d7}
 .boardMine{padding:8px 12px;background:#edf7d7;border-radius:6px;font-weight:750}
+.speedTips{margin:14px 0 4px;padding:12px 14px;background:#f5efff;border:1px solid #d8c9f4;border-radius:8px}
+.speedTips h3{margin:0;font-size:15px}
+.speedTips ul{margin:6px 0 0;padding:0;list-style:none}
+.speedTips li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 12px;line-height:1.5}
+.speedTips li strong{font-size:14px;overflow-wrap:anywhere}
+.speedTips p{margin:8px 0 0;color:#595b52;font-size:13px}
+.speedTip{color:#5b3aa8;font-size:13px;font-weight:750}
 .roundReview{margin:12px 0 0}
 .roundReview li{padding:10px 0;border-bottom:1px dashed #ccc}
 .roundReviewHeading,.roundReviewControls{display:flex;align-items:baseline;gap:8px}
