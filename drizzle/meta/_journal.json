@@ -8,6 +8,13 @@
       "when": 1795636349736,
       "tag": "0000_bouncy_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1795859395765,
+      "tag": "0001_points_leaderboard",
+      "breakpoints": true
     }
   ]
 }

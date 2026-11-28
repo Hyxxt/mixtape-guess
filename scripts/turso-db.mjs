@@ -8,17 +8,25 @@ export async function tursoDb({url, authToken}) {
   // still start with the local SQLite fallback.
   const {createClient}=await import("@libsql/client");
   const client=createClient({url,authToken});
-  await client.execute("CREATE TABLE IF NOT EXISTS _app_migrations(name TEXT PRIMARY KEY)");
-  const applied=new Set((await client.execute("SELECT name FROM _app_migrations")).rows.map(row=>row.name));
-  const folder=new URL("../drizzle/",import.meta.url);
-  for(const name of readdirSync(folder).filter(n=>n.endsWith(".sql")).sort()){
-    if(applied.has(name)) continue;
-    const statements=readFileSync(new URL(name,folder),"utf8")
-      .split("--> statement-breakpoint").map(sql=>sql.trim()).filter(Boolean);
-    await client.batch([
-      ...statements.map(sql=>({sql,args:[]})),
-      {sql:"INSERT INTO _app_migrations(name) VALUES(?)",args:[name]}
+  try {
+    const [,migrations]=await client.batch([
+      "CREATE TABLE IF NOT EXISTS _app_migrations(name TEXT PRIMARY KEY)",
+      "SELECT name FROM _app_migrations"
     ],"write");
+    const applied=new Set(migrations.rows.map(row=>row.name));
+    const folder=new URL("../drizzle/",import.meta.url);
+    for(const name of readdirSync(folder).filter(n=>n.endsWith(".sql")).sort()){
+      if(applied.has(name)) continue;
+      const statements=readFileSync(new URL(name,folder),"utf8")
+        .split("--> statement-breakpoint").map(sql=>sql.trim()).filter(Boolean);
+      await client.batch([
+        ...statements.map(sql=>({sql,args:[]})),
+        {sql:"INSERT INTO _app_migrations(name) VALUES(?)",args:[name]}
+      ],"write");
+    }
+  } catch (error) {
+    client.close();
+    throw error;
   }
   function statement(sql,args=[]){
     const query={sql,args};

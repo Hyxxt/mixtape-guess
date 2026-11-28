@@ -300,8 +300,14 @@ def main():
                 print(f"Checked {i}/{len(groups)}, playable {len(selections)}", flush=True)
     if len(selections) < 100:
         raise RuntimeError("Too few playable songs; preserving the previous catalogue.")
-    ordered = sorted(selections, key=lambda t: t["name"])
     target = ROOT/"dist"/"catalog.json"
+    hot_names = {song["name"] for song in json.loads(target.read_text(encoding="utf-8")) if song.get("hot")}
+    for song in selections:
+        if song["name"] in hot_names:
+            song["hot"] = True
+    if sum(song.get("hot", False) for song in selections) < 10:
+        raise RuntimeError("Too few playable hot songs; preserving the previous catalogue.")
+    ordered = sorted(selections, key=lambda t: t["name"])
     staged = target.with_suffix(".tmp")
     staged.write_text(json.dumps(ordered, ensure_ascii=False, separators=(",", ":"))+"\n", encoding="utf-8")
     staged.replace(target)

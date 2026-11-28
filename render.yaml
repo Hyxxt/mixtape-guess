@@ -8,6 +8,7 @@ services:
     # (or as Blueprint secrets) to persist the leaderboard across deploys.
     buildCommand: npm ci --omit=dev && node scripts/build.mjs
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: 22.22.2

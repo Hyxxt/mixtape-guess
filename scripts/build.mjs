@@ -11,12 +11,17 @@ for(const [name,type] of Object.entries(types)){
   const digest=createHash("sha256").update(data).digest("hex").slice(0,16);
   records["/"+name]=[type,type.startsWith("image/")?data.toString("base64"):data.toString("utf8"),digest];
 }
+const catalog=JSON.parse(records["/catalog.json"][1]);
+if(catalog.length<10 || new Set(catalog.map(s=>s.name)).size!==catalog.length || new Set(catalog.map(s=>s.id)).size!==catalog.length) throw Error("Invalid song catalog");
+const hot=catalog.filter(song=>song.hot===true).map(({id,name,offset})=>({id,name,offset}));
+if(hot.length<10) throw Error("Hot songs mode requires at least 10 tracks");
 const page=records["/index.html"];
 page[1]=page[1].replace(/(href|src)="(style\.css|game\.js|music\.js|boombox\.webp)(?:\?v=[^"]*)?"/g,
-  (_,attribute,name)=>attribute+'="'+name+'?v='+records["/"+name][2]+'"');
+  (_,attribute,name)=>attribute+'="'+name+'?v='+records["/"+name][2]+'"')
+  .replace(/(id="catalogCount" data-total=")\d+">\d+/,(_,prefix)=>`${prefix}${catalog.length}">${catalog.length}`)
+  .replace('<script id="hotCatalog" type="application/json">[]</script>',
+    ()=>'<script id="hotCatalog" type="application/json">'+JSON.stringify(hot).replaceAll("<","\\u003c")+'</script>');
 page[2]=createHash("sha256").update(page[1]).digest("hex").slice(0,16);
-const catalog=JSON.parse(records["/catalog.json"][1]);
-if(catalog.length<10 || new Set(catalog.map(s=>s.name)).size!==catalog.length) throw Error("Invalid song catalog");
 const worker=(await readFile(join(root,"server/api.mjs"),"utf8")).replace(/^export function /gm,"function ");
 const wrapper=`
 const assets=${JSON.stringify(records)};

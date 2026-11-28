@@ -43,7 +43,7 @@ const player = (() => {
 
     const url = new URL(question.previewPath, location.href);
     if (url.origin !== location.origin) throw new Error("试听地址有误");
-    const response = await fetch(url, { signal, cache: "no-store" });
+    const response = await fetch(url, { signal, cache: "no-store", priority });
     if (!response.ok) throw new Error("原唱试听暂时不可用");
     const metadata = await response.json();
 
