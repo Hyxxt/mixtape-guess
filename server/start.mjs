@@ -3,6 +3,7 @@ import {mkdirSync} from "node:fs";
 import {dirname} from "node:path";
 import {localDb} from "../scripts/local-db.mjs";
 import {tursoDb} from "../scripts/turso-db.mjs";
+import {serveTravel} from "./travel.mjs";
 import worker from "../dist/server/index.js";
 
 const port = Number(process.env.PORT || 8080);
@@ -58,7 +59,8 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify({error:"积分服务暂时无法连接，请稍后重试。"}));
       return;
     }
-    const out = await worker.fetch(request, {DB});
+    const travel = url.pathname === "/travel" || url.pathname.startsWith("/travel/");
+    const out = travel ? await serveTravel(request, url) : await worker.fetch(request, {DB});
     res.writeHead(out.status, Object.fromEntries(out.headers));
     res.end(Buffer.from(await out.arrayBuffer()));
   } catch (error) {

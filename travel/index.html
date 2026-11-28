@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>山河行 · 2026 中国热门城市旅游攻略</title>
+  <meta name="description" content="探索中国热门旅行城市，按地区、月份和预算筛选，查看互动地图、景点与分日行程。" />
+  <meta name="theme-color" content="#FAF8F5" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="site.css" />
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <script defer src="vendor/leaflet.js"></script>
+  <script defer src="vendor/chart.js"></script>
+  <script defer src="vendor/lucide.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Navigation -->
+  <header class="sticky top-0 z-40 bg-[#FAF8F5]/90 backdrop-blur-md border-b border-[#E8E2D9]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <button id="brandBtn" type="button" class="flex items-center gap-2.5 text-left shrink-0 focus:outline-none">
+        <span class="w-9 h-9 rounded-xl bg-[#C84B31] text-white flex items-center justify-center font-bold text-base shadow-sm">
+          行
+        </span>
+        <div>
+          <div class="font-bold text-base leading-tight tracking-tight text-[#1A1D21]">山河行</div>
+          <div class="text-[11px] text-[#5C6370] leading-tight hidden sm:block">2026 中国热门城市旅游攻略</div>
+        </div>
+      </button>
+
+      <!-- Desktop Nav -->
+      <nav class="hidden md:flex items-center gap-1 bg-white/80 p-1 rounded-xl border border-[#E8E2D9]">
+        <button type="button" data-view="explore" class="nav-tab px-3.5 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+          <i data-lucide="compass" class="w-4 h-4"></i>探索目的地
+        </button>
+        <button type="button" data-view="map" class="nav-tab px-3.5 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+          <i data-lucide="map-pin" class="w-4 h-4"></i>全国地图
+        </button>
+        <button type="button" data-view="insights" class="nav-tab px-3.5 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i>数据洞察
+        </button>
+        <button type="button" data-view="wishlist" class="nav-tab px-3.5 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+          <i data-lucide="heart" class="w-4 h-4"></i>心愿单
+          <span id="wishlistBadgeDesktop" class="ml-0.5 px-1.5 py-0.5 text-[11px] rounded-full bg-[#C84B31]/10 text-[#C84B31] font-semibold">0</span>
+        </button>
+      </nav>
+
+      <div class="flex items-center gap-2">
+        <button id="importDataBtn" type="button" class="px-3 py-2 rounded-xl bg-white border border-[#E8E2D9] hover:border-[#C84B31] text-sm font-medium text-[#1A1D21] transition flex items-center gap-1.5 shadow-sm" aria-label="导入城市数据">
+          <i data-lucide="upload" class="w-3.5 h-3.5 text-[#C84B31]"></i>
+          <span class="hidden sm:inline">导入数据</span>
+        </button>
+        <input id="jsonImportInput" type="file" accept=".json,application/json" class="hidden" />
+
+        <button id="mobileMenuBtn" type="button" class="md:hidden p-2 rounded-xl bg-white border border-[#E8E2D9] text-[#1A1D21]" aria-label="菜单" aria-controls="mobileNav" aria-expanded="false">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Nav Drawer -->
+    <div id="mobileNav" class="hidden md:hidden border-t border-[#E8E2D9] bg-white px-4 py-2.5">
+      <div class="grid grid-cols-2 gap-2">
+        <button type="button" data-view="explore" class="nav-tab-mobile px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+          <i data-lucide="compass" class="w-4 h-4"></i>探索目的地
+        </button>
+        <button type="button" data-view="map" class="nav-tab-mobile px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+          <i data-lucide="map-pin" class="w-4 h-4"></i>全国地图
+        </button>
+        <button type="button" data-view="insights" class="nav-tab-mobile px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i>数据洞察
+        </button>
+        <button type="button" data-view="wishlist" class="nav-tab-mobile px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+          <i data-lucide="heart" class="w-4 h-4"></i>心愿单 (<span id="wishlistBadgeMobile">0</span>)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <div id="dataStatus" class="rounded-2xl bg-white border border-[#E8E2D9] p-4 mb-4" role="status">正在读取旅行数据…</div>
+
+    <!-- VIEW 1: EXPLORE -->
+    <section id="view-explore" class="space-y-6">
+      <!-- Hero Banner -->
+      <div class="travel-hero rounded-3xl text-white p-6 sm:p-8 relative overflow-hidden shadow-lg">
+        <div class="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+          <div class="max-w-2xl space-y-2.5">
+            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight leading-snug">
+              中国热门城市旅游攻略
+            </h1>
+            <p class="text-base text-white/90 leading-relaxed">
+              按地区、月份和预算挑选目的地，查看景点地图和 3 天或 5 天的分日行程。
+            </p>
+          </div>
+          <div class="grid grid-cols-3 gap-3 shrink-0">
+            <div class="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3 text-center">
+              <div id="statDestinations" class="text-xl sm:text-2xl font-bold">39</div>
+              <div class="text-[11px] text-white/70 mt-0.5">热门目的地</div>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3 text-center">
+              <div id="statSpots" class="text-xl sm:text-2xl font-bold">172</div>
+              <div class="text-[11px] text-white/70 mt-0.5">精选景点</div>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3 text-center">
+              <div id="statFoods" class="text-xl sm:text-2xl font-bold">155</div>
+              <div class="text-[11px] text-white/70 mt-0.5">地道美食</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search Box inside Hero -->
+        <div class="relative z-10 mt-6 flex flex-col sm:flex-row gap-3">
+          <div class="relative flex-1">
+            <i data-lucide="search" class="w-4 h-4 text-[#5C6370] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            <input id="searchInput" type="search" aria-label="搜索旅行目的地" placeholder="搜索城市、景点或美食，如故宫、洱海、火锅"
+              class="w-full pl-11 pr-10 py-3 rounded-2xl bg-white text-[#1A1D21] placeholder-[#8A919E] text-sm focus:outline-none focus:ring-2 focus:ring-[#C84B31] shadow-sm" />
+            <button id="clearSearchBtn" type="button" class="hidden absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#8A919E] hover:text-[#1A1D21]" aria-label="清空搜索">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <button id="quickRandomBtn" type="button" class="px-5 py-3 rounded-2xl bg-[#C84B31] hover:bg-[#A63A24] text-white text-sm font-medium transition flex items-center justify-center gap-2 shrink-0 shadow-sm">
+            <i data-lucide="shuffle" class="w-4 h-4"></i>帮我随机挑一站
+          </button>
+        </div>
+        <a class="hero-credit relative z-10 mt-3 inline-block text-xs text-white/80 underline" href="https://commons.wikimedia.org/wiki/File:1_tianzishan_wulingyuan_zhangjiajie_2012.jpg" target="_blank" rel="noopener noreferrer">张家界天子山 · chensiyuan / CC BY-SA 4.0</a>
+      </div>
+
+      <!-- Region Category Navigation -->
+      <div class="space-y-3">
+        <div id="regionTabs" class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1"></div>
+
+        <!-- Secondary Filters -->
+        <div class="bg-white rounded-2xl border border-[#E8E2D9] p-3.5 sm:p-4 flex flex-wrap items-center gap-3 justify-between">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <div class="flex items-center gap-1.5">
+              <label for="daysFilter" class="text-sm font-medium text-[#5C6370]">建议天数</label>
+              <select id="daysFilter" class="text-sm bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl px-3 py-1.5 text-[#1A1D21] focus:outline-none focus:border-[#C84B31]">
+                <option value="all">全部天数</option>
+                <option value="short">1–2天（周末短途）</option>
+                <option value="medium">2–3天（小长假）</option>
+                <option value="classic">3–4天（经典游）</option>
+                <option value="deep">4–7天（深度游）</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <label for="monthFilter" class="text-sm font-medium text-[#5C6370]">出行月份</label>
+              <select id="monthFilter" class="text-sm bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl px-3 py-1.5 text-[#1A1D21] focus:outline-none focus:border-[#C84B31]">
+                <option value="0">不限月份</option>
+                <option value="1">1 月</option>
+                <option value="2">2 月</option>
+                <option value="3">3 月</option>
+                <option value="4">4 月</option>
+                <option value="5">5 月</option>
+                <option value="6">6 月</option>
+                <option value="7">7 月</option>
+                <option value="8">8 月</option>
+                <option value="9">9 月</option>
+                <option value="10">10 月</option>
+                <option value="11">11 月</option>
+                <option value="12">12 月</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <label for="budgetFilter" class="text-sm font-medium text-[#5C6370]">人均起价</label>
+              <select id="budgetFilter" class="text-sm bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl px-3 py-1.5 text-[#1A1D21] focus:border-[#C84B31]">
+                <option value="0">不限预算</option>
+                <option value="1000">¥1,000 以内</option>
+                <option value="2000">¥2,000 以内</option>
+                <option value="3000">¥3,000 以内</option>
+                <option value="5000">¥5,000 以内</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <label for="sortSelect" class="text-sm font-medium text-[#5C6370]">排序</label>
+              <select id="sortSelect" class="text-sm bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl px-3 py-1.5 text-[#1A1D21] focus:outline-none focus:border-[#C84B31]">
+                <option value="default">默认榜单顺序</option>
+                <option value="budget_asc">预算从低到高</option>
+                <option value="spots_desc">景点数量最多</option>
+                <option value="off_first">当前月份淡季优先</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 text-xs text-[#5C6370]">
+            <span role="status">共找到 <strong id="resultCount" class="text-[#1A1D21] text-sm">39</strong> 个目的地</span>
+            <button id="resetFiltersBtn" type="button" class="hidden text-[#C84B31] hover:underline font-medium">重置筛选</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Destination Grid -->
+      <div id="destinationGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+
+      <!-- Empty State -->
+      <div id="exploreEmpty" class="hidden bg-white rounded-3xl border border-[#E8E2D9] p-12 text-center space-y-3">
+        <div class="w-12 h-12 rounded-2xl bg-[#FAF8F5] mx-auto flex items-center justify-center text-[#5C6370]">
+          <i data-lucide="search-x" class="w-6 h-6"></i>
+        </div>
+        <div class="text-base font-semibold">没有找到匹配的目的地</div>
+        <p class="text-sm text-[#5C6370]">试试换个关键词，或放宽地区和天数筛选条件。</p>
+        <button id="emptyResetBtn" type="button" class="mt-2 px-4 py-2 rounded-xl bg-[#C84B31] text-white text-sm font-medium">重置全部筛选</button>
+      </div>
+    </section>
+
+    <!-- VIEW 2: MAP -->
+    <section id="view-map" class="hidden space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-bold">全国热门目的地与景点分布图</h2>
+          <p class="text-xs sm:text-sm text-[#5C6370] mt-0.5">
+            点击城市图标或城市列表，查看景点位置和攻略。
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="mapTileStdBtn" type="button" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-[#1A1D21] text-white transition">高德标准图</button>
+          <button id="mapTileSatBtn" type="button" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-white border border-[#E8E2D9] text-[#1A1D21] transition">高德卫星图</button>
+          <button id="mapResetBtn" type="button" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-white border border-[#E8E2D9] hover:border-[#C84B31] text-[#C84B31] transition flex items-center gap-1">
+            <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>全国视角
+          </button>
+        </div>
+      </div>
+
+      <div id="mapRegionFilter" class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div class="lg:col-span-8 bg-white rounded-3xl border border-[#E8E2D9] overflow-hidden shadow-sm">
+          <p id="mapStatus" class="hidden px-4 py-2 text-sm text-[#5C6370]" role="status"></p>
+          <div id="chinaMap" class="w-full h-[460px] sm:h-[560px]"></div>
+        </div>
+        <div class="lg:col-span-4 bg-white rounded-3xl border border-[#E8E2D9] p-4 flex flex-col h-[460px] sm:h-[560px]">
+          <div class="flex items-center justify-between pb-3 border-b border-[#E8E2D9]">
+            <div class="font-semibold text-sm" id="mapSideTitle">全部 39 个目的地</div>
+            <button id="mapClearFocusBtn" type="button" class="hidden text-xs text-[#C84B31] hover:underline font-medium">返回城市列表</button>
+          </div>
+          <div id="mapSideList" class="flex-1 overflow-y-auto divide-y divide-[#F2EDE6] mt-1 pr-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: INSIGHTS -->
+    <section id="view-insights" class="hidden space-y-6">
+      <div>
+        <h2 class="text-xl font-bold">目的地数据洞察</h2>
+        <p class="text-sm text-[#5C6370] mt-1">按当前城市数据统计地区分布和淡旺季。</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="bg-white rounded-3xl border border-[#E8E2D9] p-5 shadow-sm">
+          <h3 class="font-semibold text-base mb-1">七大地理分区：目的地与景点分布</h3>
+          <p class="text-sm text-[#5C6370] mb-4">对比各地区的城市数和景点数。</p>
+          <div class="relative h-72">
+            <canvas id="regionChart"></canvas>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-3xl border border-[#E8E2D9] p-5 shadow-sm">
+          <h3 class="font-semibold text-base mb-1">全年 12 个月淡 / 平 / 旺季目的地数量</h3>
+          <p class="text-sm text-[#5C6370] mb-4">比较各月份适合错峰出行的目的地数量。</p>
+          <div class="relative h-72">
+            <canvas id="seasonChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Credibility & Sources -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div class="lg:col-span-7 bg-white rounded-3xl border border-[#E8E2D9] p-5 shadow-sm">
+          <h3 class="font-semibold text-base mb-3 flex items-center gap-2">
+            <i data-lucide="book-open" class="w-4 h-4 text-[#2D6A4F]"></i>数据说明
+          </h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+              <thead>
+                <tr class="border-b border-[#E8E2D9] text-xs text-[#5C6370]">
+                  <th class="py-2 pr-3 font-medium">类型</th>
+                  <th class="py-2 pr-3 font-medium">涵盖字段</th>
+                  <th class="py-2 font-medium">使用说明</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#F2EDE6]">
+                <tr>
+                  <td class="py-2.5 pr-3 font-medium">城市与景点</td>
+                  <td class="py-2.5 pr-3">城市、入选参考、经纬度与图片来源</td>
+                  <td class="py-2.5 text-[#5C6370]">沿用原攻略数据，图片许可可在城市详情查看</td>
+                </tr>
+                <tr>
+                  <td class="py-2.5 pr-3 font-medium">行程建议</td>
+                  <td class="py-2.5 pr-3 font-medium">景点清单、特色美食、最佳季节、3天/5天行程结构</td>
+                  <td class="py-2.5 text-[#5C6370]">通用性强的常识性攻略整理，适合作为规划框架</td>
+                </tr>
+                <tr>
+                  <td class="py-2.5 pr-3 font-medium">费用估算</td>
+                  <td class="py-2.5 pr-3 font-medium">人均预算区间、淡旺季价格、部分浮动门票</td>
+                  <td class="py-2.5 text-[#5C6370]">出行前请以景区及交通官方渠道的价格为准</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="lg:col-span-5 bg-white rounded-3xl border border-[#E8E2D9] p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 class="font-semibold text-base mb-3 flex items-center gap-2">
+              <i data-lucide="book-open" class="w-4 h-4 text-[#C84B31]"></i>原攻略列出的参考来源
+            </h3>
+            <ul id="metaSourcesList" class="space-y-1.5 text-sm text-[#5C6370]"></ul>
+          </div>
+          <div class="mt-4 pt-3 border-t border-[#F2EDE6] text-xs text-[#5C6370] space-y-1">
+            <div>坐标系：<span id="metaCoordSys" class="text-[#1A1D21]"></span></div>
+            <div>配图许可：<span id="metaImgNote" class="text-[#1A1D21]"></span></div>
+            <div class="flex flex-wrap gap-3 pt-2 text-sm">
+              <a href="destinations.json" download class="underline text-[#A63A24]">下载原始城市数据</a>
+              <button type="button" id="resetDataBtn" class="hidden underline text-[#A63A24]">恢复原始数据</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: WISHLIST -->
+    <section id="view-wishlist" class="hidden space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold">我的旅行心愿单</h2>
+          <p class="text-sm text-[#5C6370] mt-0.5">收藏想去的城市，方便随时对比预算与行程。</p>
+        </div>
+        <button id="clearWishlistBtn" type="button" class="hidden px-3.5 py-1.5 rounded-xl bg-white border border-[#E8E2D9] hover:border-[#C84B31] text-xs font-medium text-[#C84B31]">
+          清空心愿单
+        </button>
+      </div>
+      <div id="wishlistGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+      <div id="wishlistEmpty" class="hidden bg-white rounded-3xl border border-[#E8E2D9] p-12 text-center space-y-3">
+        <div class="w-12 h-12 rounded-2xl bg-[#FAF8F5] mx-auto flex items-center justify-center text-[#C84B31]">
+          <i data-lucide="heart" class="w-6 h-6"></i>
+        </div>
+        <div class="text-base font-semibold">心愿单还是空的</div>
+        <p class="text-sm text-[#5C6370]">在「探索目的地」中点击卡片右上角的爱心即可收藏。</p>
+        <button id="goExploreBtn" type="button" class="mt-2 px-4 py-2 rounded-xl bg-[#C84B31] text-white text-sm font-medium">去逛逛目的地</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Floating Compare Bar -->
+  <div id="compareBar" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-2xl bg-[#1A1D21] text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center justify-between gap-3 border border-white/10">
+    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar" id="compareChips"></div>
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="clearCompareBtn" type="button" class="px-2.5 py-1.5 rounded-xl text-xs text-white/70 hover:text-white">清空</button>
+      <button id="openCompareBtn" type="button" class="px-4 py-1.5 rounded-xl bg-[#C84B31] hover:bg-[#A63A24] text-white text-xs sm:text-sm font-semibold transition">
+        开始对比
+      </button>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle" class="hidden fixed inset-0 z-50 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-[#FAF8F5] w-full max-w-4xl max-h-[92vh] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-up">
+      <div id="detailModalBody" class="overflow-y-auto flex-1"></div>
+    </div>
+  </div>
+
+  <!-- Compare Modal -->
+  <div id="compareModal" role="dialog" aria-modal="true" aria-labelledby="compareTitle" class="hidden fixed inset-0 z-50 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-5xl max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-up">
+      <div class="px-6 py-4 border-b border-[#E8E2D9] flex items-center justify-between">
+        <h3 id="compareTitle" class="font-bold text-lg">目的地横向对比</h3>
+        <button id="closeCompareModalBtn" type="button" class="p-1.5 rounded-xl hover:bg-[#FAF8F5] text-[#5C6370]" aria-label="关闭对比">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="compareModalBody" class="overflow-auto p-5 flex-1"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" role="status" class="hidden fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-[#1A1D21] text-white text-sm shadow-xl flex items-center gap-2"></div>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#E8E2D9] bg-white mt-10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#5C6370]">
+      <div>
+        <span class="font-semibold text-[#1A1D21]">山河行 · 中国热门城市旅游攻略</span> · 信息整理于 2026 年 11 月，出行前请以景区官方为准。
+      </div>
+      <div>
+        城市配图来源及许可见各城市攻略。
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
