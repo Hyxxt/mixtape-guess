@@ -11,7 +11,7 @@ const hotPool = JSON.parse($("hotCatalog").textContent);
 let mode = "ranked", phase = "home", nickname = "", question = null, clip = null;
 let score = 0, correctCount = 0, streak = 0, picked = null, progress = 0, startedAt = 0;
 let timer, rafId = 0, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
-let hotSongs, currentResult, lastFailure, modalVersion = 0;
+let hotSongs, hotStartedAt = null, currentResult, lastFailure, modalVersion = 0;
 let activeAnswer, profileRequest, profileReady = false, scoringVersion = 2;
 let advanceTimer, reviewHold = false, serverRtt = 0;
 
@@ -89,9 +89,9 @@ function closeDialog() {
   if (modal.open) modal.close();
 }
 
-function rememberHistory(right, total) {
+function rememberHistory(right, total, points) {
   const rows = historyRows();
-  rows.unshift({ time: Date.now(), right, total });
+  rows.unshift({ time: Date.now(), right, total, score: points });
   try { localStorage.setItem(historyKey, JSON.stringify(rows.slice(0, 50))); } catch {}
 }
 
@@ -194,6 +194,7 @@ function reset() {
   streak = 0;
   progress = 0;
   startedAt = 0;
+  hotStartedAt = null;
   reviewHold = false;
   lastFailure = null;
 }
@@ -268,7 +269,7 @@ function showHome() {
   $("feedback").textContent = isRanked() ? "完成 10 题即可上榜。" : "热歌成绩保存在这台设备。";
   const samples = isRanked()
     ? [["前 5 秒答对", "10 分"], ["第 6～10 秒答对", "9～5 分"], ["答错或超时", "0 分"], ["本局满分", "100 分"]]
-    : [["每局曲目", "10 首"], ["每题片段", "10 秒，可重听"], ["每题答对", "10 分"], ["本局满分", "100 分"]];
+    : [["前 2 秒答对", "10 分"], ["之后每过 1 秒", "少 1 分"], ["答对最低得分", "1 分"], ["答错或跳过", "0 分"]];
   const lines = samples.map(([key, value]) => {
     const row = node("div", null, "logrow");
     row.append(node("span", key), node("b", value));
@@ -390,6 +391,7 @@ function showQuestion(q) {
   activeAnswer = null;
   progress = 0;
   startedAt = 0;
+  hotStartedAt = null;
   clip = null;
   phase = "loading";
   if (isRanked()) {
@@ -531,10 +533,11 @@ function revealOptions() {
 
 function renderLive() {
   phase = "live";
+  if (!isRanked()) hotStartedAt ??= startedAt;
   revealOptions();
   setStagePlaying(true);
   $("status").textContent = "播放中";
-  $("feedback").textContent = isRanked() ? `前 ${scoringVersion === 1 ? 1 : 5} 秒答对得 10 分。` : "听原唱，选出你的答案。";
+  $("feedback").textContent = isRanked() ? `前 ${scoringVersion === 1 ? 1 : 5} 秒答对得 10 分。` : "前 2 秒答对得 10 分，重听时计分继续。";
   playControl(isRanked() ? "限时答题中" : "暂停播放", isRanked() ? "clock" : "pause", isRanked());
   skipControl(isRanked() ? "放弃本题" : "跳过本题");
 }
@@ -561,6 +564,7 @@ function finishPlayback() {
   phase = "ready";
   revealOptions();
   $("status").textContent = "重播";
+  $("feedback").textContent = "片段已播完，可以继续作答或重听。";
   playControl("重听片段", "repeat");
   skipControl("跳过本题");
 }
@@ -619,13 +623,15 @@ function pauseHot() {
   phase = "paused";
   displayWave(progress, false);
   $("status").textContent = "已暂停";
+  $("feedback").textContent = "播放已暂停，计分仍继续。";
   playControl("继续播放", "play");
   skipControl("跳过本题");
 }
 
 function answer(choice) {
   if (isRanked() && phase !== "live" && !(choice === -1 && phase === "scheduled")) return;
-  if (!isRanked() && !["live", "paused", "ready"].includes(phase)) return;
+  if (!isRanked() && (hotStartedAt === null || !["live", "paused", "ready"].includes(phase))) return;
+  const answeredAt = performance.now();
   if (isRanked() && remainingPosition() >= 10000) choice = -1;
   progress = remainingPosition();
   stopClock();
@@ -647,7 +653,8 @@ function answer(choice) {
     return;
   }
   const correctIndex = question.choices.indexOf(question.answer);
-  const earned = choice === correctIndex ? 10 : 0;
+  const seconds = Math.ceil((answeredAt - hotStartedAt) / 1000);
+  const earned = choice === correctIndex ? Math.max(1, 10 - Math.max(0, seconds - 2)) : 0;
   finalAnswer({
     earned,
     score: score + earned,
@@ -721,7 +728,7 @@ function finalAnswer(result) {
   playControl(result.done ? "查看成绩" : "下一题", result.done ? "bars" : "skip");
   skipControl(result.done ? "查看成绩" : "下一题");
   clip = null;
-  if (result.done && !isRanked()) rememberHistory(correctCount, question.total);
+  if (result.done && !isRanked()) rememberHistory(correctCount, question.total, score);
   if (!result.done && !nextPrepared) {
     const next = isRanked() ? result.next : hotQuestion(question.index + 1);
     if (next) prefetch(next);
@@ -926,7 +933,8 @@ async function showHistory() {
     const hot = total === roundSize;
     const item = node("div", null, "logrow");
     const date = new Date(row.time).toLocaleDateString("zh-CN");
-    item.append(node("span", `${date} · ${hot ? "热歌" : "旧版练习"}`), node("span", "答对 " + row.right + " / " + total), node("b", row.right * (hot ? 10 : 100) + " 分"));
+    const points = Number.isInteger(row.score) ? row.score : row.right * (hot ? 10 : 100);
+    item.append(node("span", `${date} · ${hot ? "热歌" : "旧版练习"}`), node("span", "答对 " + row.right + " / " + total), node("b", points + " 分"));
     blocks.push(item);
   });
   container.replaceChildren(...blocks);
@@ -936,7 +944,7 @@ function showHelp() {
   showDialog(
     "玩法说明",
     node("p", "积分模式每局 10 题，每题限时 10 秒。前 5 秒答对得 10 分，第 6 到 10 秒答对依次得 9 到 5 分。答错、放弃和超时均为 0 分。"),
-    node("p", "原唱加载完成才开始计时。热歌模式每局 10 首，可以暂停和重听，每题答对得 10 分，成绩保存在本机。"),
+    node("p", "热歌模式每局 10 首。前 2 秒答对得 10 分，第 3 秒得 9 分，之后每过一秒少 1 分，答对最低得 1 分。暂停和重听期间会继续计分，成绩保存在本机。"),
     node("p", "按 1–4 或 A–D 选答案，空格播放、暂停或重听，Enter 进下一题。")
   );
 }
