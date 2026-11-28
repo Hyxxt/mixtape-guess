@@ -15,6 +15,13 @@
       "when": 1795859395765,
       "tag": "0001_points_leaderboard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795862001475,
+      "tag": "0002_hot_leaderboard",
+      "breakpoints": true
     }
   ]
 }

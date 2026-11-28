@@ -23,7 +23,9 @@ test("turso adapter preserves old scores while migrating and writing new scores"
         INSERT INTO visits VALUES('v',0,'device','home',1);`);
     } finally { previous.close(); }
     db=await tursoDb({url:"file:"+file});
-    assert.equal((await db.prepare("SELECT scoring_version FROM games WHERE id='open'").first()).scoring_version,1);
+    const open=await db.prepare("SELECT scoring_version,mode FROM games WHERE id='open'").first();
+    assert.equal(open.scoring_version,1);
+    assert.equal(open.mode,"ranked");
     assert.equal((await db.prepare("SELECT score FROM best WHERE owner='old'").first()).score,85);
     assert.equal((await db.prepare("SELECT fresh FROM visits WHERE id='v'").first()).fresh,1);
     await db.prepare("INSERT INTO players(id,nickname,created) VALUES(?,?,?)")

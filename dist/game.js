@@ -6,12 +6,11 @@ const icon = name => '<svg aria-hidden="true"><use href="#' + name + '"/></svg>'
 const modal = $("modal");
 const historyKey = "blind-test-fm.eason.history.v1";
 const roundSize = 10;
-const hotPool = JSON.parse($("hotCatalog").textContent);
 
 let mode = "ranked", phase = "home", nickname = "", question = null, clip = null;
 let score = 0, correctCount = 0, streak = 0, picked = null, progress = 0, startedAt = 0;
 let timer, rafId = 0, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
-let hotSongs, hotStartedAt = null, currentResult, lastFailure, modalVersion = 0;
+let hasPlayed = false, currentResult, lastFailure, modalVersion = 0;
 let activeAnswer, profileRequest, profileReady = false, scoringVersion = 1;
 let advanceTimer, reviewHold = false, serverRtt = 0;
 
@@ -64,15 +63,6 @@ function api(path, data, parent, timeoutMs) {
     serverRtt = performance.now() - started;
     return payload;
   });
-}
-
-function shuffled(items) {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
 }
 
 function showDialog(title, ...content) {
@@ -194,7 +184,7 @@ function reset() {
   streak = 0;
   progress = 0;
   startedAt = 0;
-  hotStartedAt = null;
+  hasPlayed = false;
   reviewHold = false;
   lastFailure = null;
 }
@@ -247,7 +237,7 @@ function setModeUI() {
   $("modeTitle").textContent = modeLabel();
   $("heroTagline").textContent = isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "从陈奕迅代表热歌中抽 10 首，可暂停、重听。";
   $("startCta").textContent = startLabel();
-  $("catalogCount").textContent = isRanked() ? $("catalogCount").dataset.total : String(hotPool.length);
+  $("catalogCount").textContent = isRanked() ? $("catalogCount").dataset.total : $("catalogCount").dataset.hot;
   $("track").textContent = question ? "第 " + pad(question.index + 1) + " / " + roundSize + " 首" : "每局 " + roundSize + " 首";
   $("points").textContent = String(score).padStart(3, "0");
   renderHits();
@@ -266,7 +256,7 @@ function showHome() {
   document.querySelector(".choices h3").textContent = "计分规则";
   $("mystery").textContent = isRanked() ? "十秒猜歌挑战" : "陈奕迅热门歌曲";
   $("status").textContent = "就绪";
-  $("feedback").textContent = isRanked() ? "完成 10 题即可上榜。" : "热歌成绩保存在这台设备。";
+  $("feedback").textContent = isRanked() ? "完成 10 题即可上榜。" : "完成 10 题即可登上热歌榜。";
   const samples = isRanked()
     ? [["前 1 秒答对", "10 分"], ["第 2～10 秒答对", "9～1 分"], ["答错或超时", "0 分"], ["本局满分", "100 分"]]
     : [["前 2 秒答对", "10 分"], ["之后每过 1 秒", "少 1 分"], ["答对最低得分", "1 分"], ["答错或跳过", "0 分"]];
@@ -303,7 +293,7 @@ function chooseMode(target) {
   }
   showDialog(
     "退出当前挑战？",
-    node("p", isRanked() ? "再次进入积分模式时，可以继续本局。" : "切换后，本局热歌的进度会清空。"),
+    node("p", "返回此模式后可以继续本局，已播放的题目会继续计时。"),
     action("切换模式", switchNow),
     action("继续当前挑战", closeDialog)
   );
@@ -322,7 +312,7 @@ function profileForm(after) {
   save.type = "submit";
   alert.setAttribute("role", "status");
   form.append(label, field, alert, save);
-  showDialog(nickname ? "我的昵称" : "设置参赛昵称", node("p", "积分模式成绩会以这个昵称显示在排行榜。"), form);
+  showDialog(nickname ? "我的昵称" : "设置参赛昵称", node("p", "积分榜和热歌榜会使用同一个参赛昵称。"), form);
   field.focus();
 
   form.onsubmit = async event => {
@@ -359,21 +349,6 @@ function loadMe() {
   return profileRequest;
 }
 
-function hotQuestion(index) {
-  const song = hotSongs[index];
-  const names = shuffled(hotPool.filter(v => v.id !== song.id)).slice(0, 3).map(v => v.name);
-  const choices = shuffled([song.name, ...names]);
-  return {
-    index,
-    total: roundSize,
-    choices,
-    offset: song.offset,
-    previewPath: "/api/preview?id=" + song.id,
-    answer: song.name,
-    trackId: song.id
-  };
-}
-
 function timedLoad(q, parent, priority = "auto") {
   return withDeadline(parent, 18000, signal => player.load(q, signal, priority));
 }
@@ -391,14 +366,12 @@ function showQuestion(q) {
   activeAnswer = null;
   progress = 0;
   startedAt = 0;
-  hotStartedAt = null;
+  hasPlayed = false;
   clip = null;
   phase = "loading";
-  if (isRanked()) {
-    score = q.score;
-    correctCount = q.correct;
-    scoringVersion = q.scoringVersion;
-  }
+  score = q.score;
+  correctCount = q.correct;
+  scoringVersion = q.scoringVersion;
   reviewHold = false;
   stopClock();
   player.stop();
@@ -407,11 +380,11 @@ function showQuestion(q) {
   $("mystery").textContent = "神秘曲目 " + pad(q.index + 1);
   $("status").textContent = "加载中";
   $("feedback").textContent = "正在准备原唱，加载时间不计入作答。";
-  const list = q.choices.map((name, i) => {
+  const list = q.choices.map((_, i) => {
     const b = node("button", null, "opt");
     b.type = "button";
     b.disabled = true;
-    b.append(node("span", "ABCD"[i], "letter"), node("span", isRanked() ? "播放后揭晓" : name));
+    b.append(node("span", "ABCD"[i], "letter"), node("span", "播放后揭晓"));
     b.onclick = () => answer(i);
     return b;
   });
@@ -437,21 +410,15 @@ async function opening() {
   $("feedback").textContent = "正在准备第一题。";
 
   try {
-    let q;
-    if (isRanked()) {
-      if (!profileReady) await loadMe();
-      if (token !== generation) return;
-      if (!nickname) {
-        phase = "home";
-        showHome();
-        profileForm(begin);
-        return;
-      }
-      q = await api("round", {}, controller.signal);
-    } else {
-      hotSongs = shuffled(hotPool).slice(0, roundSize);
-      q = hotQuestion(0);
+    if (!profileReady) await loadMe();
+    if (token !== generation) return;
+    if (!nickname) {
+      phase = "home";
+      showHome();
+      profileForm(begin);
+      return;
     }
+    const q = await api("round", { mode }, controller.signal);
     if (token !== generation) return;
     await prepareQuestion(q);
   } catch (e) {
@@ -500,15 +467,7 @@ async function replaceQuestion() {
   skipControl("", true);
   playControl("正在换歌…", "repeat", true);
   try {
-    let next;
-    if (isRanked()) next = await api("replace", { round: old.round, index: old.index }, controller.signal);
-    else {
-      const reserved = new Set(hotSongs.map(s => s.id));
-      const alternatives = hotPool.filter(s => !reserved.has(s.id));
-      if (!alternatives.length) throw new Error("没有其他可替换的歌曲。");
-      hotSongs[old.index] = alternatives[Math.floor(Math.random() * alternatives.length)];
-      next = hotQuestion(old.index);
-    }
+    const next = await api("replace", { round: old.round, index: old.index }, controller.signal);
     if (token === generation) await prepareQuestion(next);
   } catch (e) {
     if (token === generation) {
@@ -533,7 +492,7 @@ function revealOptions() {
 
 function renderLive() {
   phase = "live";
-  if (!isRanked()) hotStartedAt ??= startedAt;
+  hasPlayed = true;
   revealOptions();
   setStagePlaying(true);
   $("status").textContent = "播放中";
@@ -562,6 +521,7 @@ function finishPlayback() {
   player.stop();
   if (isRanked()) { answer(-1); return; }
   phase = "ready";
+  hasPlayed = true;
   revealOptions();
   $("status").textContent = "重播";
   $("feedback").textContent = "片段已播完，可以继续作答或重听。";
@@ -571,7 +531,7 @@ function finishPlayback() {
 
 async function playCurrent() {
   if (!clip || (phase !== "ready" && phase !== "paused" && phase !== "startRetry")) return;
-  const token = generation, q = question, previous = phase;
+  const token = generation, q = question;
   phase = "starting";
   playControl("准备播放…", "play", true);
   skipControl("", true);
@@ -580,7 +540,7 @@ async function playCurrent() {
     if (token !== generation || question !== q) return;
     let elapsed = progress === 10000 ? 0 : progress, delay = 0;
     let upcoming;
-    if (isRanked()) {
+    if (isRanked() || !hasPlayed) {
       const before = performance.now();
       const scheduled = await api("start", { round: q.round, index: q.index, rtt: serverRtt }, controller.signal);
       if (token !== generation || question !== q) return;
@@ -591,6 +551,7 @@ async function playCurrent() {
       const untilStart = scheduled.startAt - estimatedServer;
       delay = Math.max(0, untilStart);
       elapsed = Math.max(0, -untilStart);
+      if (!isRanked() && elapsed >= 10000) elapsed = 0;
     }
     startedAt = performance.now() + delay - elapsed;
     phase = "scheduled";
@@ -600,13 +561,10 @@ async function playCurrent() {
     if (delay <= 0) renderLive();
     timer = setTimeout(finishPlayback, Math.max(0, startedAt + 10000 - performance.now()));
     rafId = requestAnimationFrame(tick);
-    if (!nextPrepared && q.index + 1 < q.total) {
-      const next = isRanked() ? upcoming : hotQuestion(q.index + 1);
-      if (next) prefetch(next);
-    }
+    if (!nextPrepared && upcoming) prefetch(upcoming);
   } catch (e) {
     if (token !== generation || question !== q) return;
-    phase = isRanked() ? "startRetry" : previous;
+    phase = "startRetry";
     stopClock();
     player.stop();
     $("feedback").textContent = "未能开始播放，点击重试。";
@@ -616,11 +574,18 @@ async function playCurrent() {
 }
 
 function pauseHot() {
-  if (isRanked() || phase !== "live") return;
+  if (isRanked() || (phase !== "live" && phase !== "scheduled")) return;
   progress = remainingPosition();
   stopClock();
   player.stop();
+  if (phase === "scheduled" && performance.now() < startedAt) {
+    phase = "ready";
+    readyMessage();
+    return;
+  }
   phase = "paused";
+  hasPlayed = true;
+  revealOptions();
   displayWave(progress, false);
   $("status").textContent = "已暂停";
   $("feedback").textContent = "播放已暂停，计分仍继续。";
@@ -630,8 +595,7 @@ function pauseHot() {
 
 function answer(choice) {
   if (isRanked() && phase !== "live" && !(choice === -1 && phase === "scheduled")) return;
-  if (!isRanked() && (hotStartedAt === null || !["live", "paused", "ready"].includes(phase))) return;
-  const answeredAt = performance.now();
+  if (!isRanked() && (!hasPlayed || !["live", "paused", "ready"].includes(phase))) return;
   if (isRanked() && remainingPosition() >= 10000) choice = -1;
   progress = remainingPosition();
   stopClock();
@@ -645,24 +609,10 @@ function answer(choice) {
     b.classList.toggle("chosen", i === choice);
   });
   skipControl("", true);
-  if (isRanked()) {
-    $("status").textContent = "计分中";
-    $("feedback").textContent = choice === -1 ? "正在结算本题…" : "已锁定答案，正在计分…";
-    activeAnswer = { round: question.round, index: question.index, choice };
-    settle();
-    return;
-  }
-  const correctIndex = question.choices.indexOf(question.answer);
-  const seconds = Math.ceil((answeredAt - hotStartedAt) / 1000);
-  const earned = choice === correctIndex ? Math.max(1, 10 - Math.max(0, seconds - 2)) : 0;
-  finalAnswer({
-    earned,
-    score: score + earned,
-    correct: correctCount + Number(earned > 0),
-    correctIndex,
-    name: question.answer,
-    done: question.index + 1 === question.total
-  });
+  $("status").textContent = "计分中";
+  $("feedback").textContent = choice === -1 ? "正在结算本题…" : "已锁定答案，正在计分…";
+  activeAnswer = { round: question.round, index: question.index, choice };
+  settle();
 }
 
 async function settle() {
@@ -716,7 +666,7 @@ function finalAnswer(result) {
     ? `猜对了！+${result.earned} 分${streakText}`
     : `本题 0 分，答案是《${result.name}》。`;
 
-  const trackId = result.trackId || question.trackId;
+  const trackId = result.trackId;
   if (Number.isSafeInteger(trackId)) {
     const source = node("a", "听完整歌曲");
     source.className = "listenLink";
@@ -729,10 +679,7 @@ function finalAnswer(result) {
   skipControl(result.done ? "查看成绩" : "下一题");
   clip = null;
   if (result.done && !isRanked()) rememberHistory(correctCount, question.total, score);
-  if (!result.done && !nextPrepared) {
-    const next = isRanked() ? result.next : hotQuestion(question.index + 1);
-    if (next) prefetch(next);
-  }
+  if (!nextPrepared && result.next) prefetch(result.next);
   scheduleAdvance();
 }
 
@@ -782,9 +729,7 @@ async function advance() {
     phase = "loading";
     playControl("正在准备下一题…", "play", true);
     try {
-      const q = isRanked()
-        ? currentResult.next || await api("next", { round, index: index + 1 }, signal)
-        : hotQuestion(index + 1);
+      const q = currentResult.next || await api("next", { round, index: index + 1 }, signal);
       if (token !== generation) return;
       const audio = nextPrepared?.path === q.previewPath ? nextPrepared.audio : null;
       nextPrepared = null;
@@ -839,7 +784,7 @@ function showResults() {
   line.append(node("small", " / 100 分"));
   const season = isRanked() ? (scoringVersion === 2 ? "five-second" : "ranked") : "hot";
   const base = "共 " + roundSize + " 题，答对 " + correctCount + " 题。";
-  const details = node("p", base + (isRanked() ? "正在读取个人排名…" : ""));
+  const details = node("p", base + "正在读取个人排名…");
   const shareStatus = node("p", null, "sharemsg");
   shareStatus.hidden = true;
   shareStatus.setAttribute("role", "status");
@@ -848,15 +793,13 @@ function showResults() {
   const parts = [line, details, shareStatus, share, action("再来一局", () => { closeDialog(); begin(); })];
   parts.push(action(isRanked() ? "查看排行榜" : "查看热歌榜", () => showBoard(season)));
   const version = showDialog(modeLabel() + "成绩", ...parts);
-  if (isRanked()) {
-    api("board?season=" + season).then(board => {
-      if (version !== modalVersion || !modal.open) return;
-      const mine = board.mine;
-      details.textContent = base + (mine ? "个人最高 " + mine.score + " 分 · 当前第 " + mine.rank + " 名。" : "本局已提交。");
-    }).catch(() => {
-      if (version === modalVersion && modal.open) details.textContent = base + "本局已提交。";
-    });
-  }
+  api("board?season=" + season).then(board => {
+    if (version !== modalVersion || !modal.open) return;
+    const mine = board.mine;
+    details.textContent = base + (mine ? "个人最高 " + mine.score + " 分 · 当前第 " + mine.rank + " 名。" : "本局已提交。");
+  }).catch(() => {
+    if (version === modalVersion && modal.open) details.textContent = base + "本局已提交。";
+  });
 }
 
 function leaderboardRow(rank, label, correct, points) {
@@ -865,18 +808,6 @@ function leaderboardRow(rank, label, correct, points) {
   right.append(node("small", correct + " / " + roundSize), node("strong", points + " 分"));
   item.append(node("b", "#" + rank), node("span", label, "boardname"), right);
   return item;
-}
-
-function showHotBoard(content) {
-  const rows = historyRows()
-    .filter(row => row.total === roundSize && Number.isInteger(row.score))
-    .sort((a, b) => b.score - a.score || b.right - a.right || a.time - b.time)
-    .slice(0, 10);
-  content.append(node("p", rows.length ? "本机热歌计时成绩 · 最高 10 局" : "本机还没有热歌计时成绩。"));
-  rows.forEach((row, index) => {
-    const date = new Date(row.time).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" });
-    content.append(leaderboardRow(index + 1, date, row.right, row.score));
-  });
 }
 
 function showBoard(season = "ranked") {
@@ -898,11 +829,6 @@ function showBoard(season = "ranked") {
     const id = ++requestId;
     for (const entry of choices) entry.button.setAttribute("aria-pressed", String(key === entry.key));
     content.replaceChildren();
-    if (key === "hot") {
-      status.hidden = true;
-      showHotBoard(content);
-      return;
-    }
     status.textContent = "正在读取排行榜…";
     status.hidden = false;
     try {
@@ -912,7 +838,7 @@ function showBoard(season = "ranked") {
       if (key === "five-second") content.append(node("p", "采用前 5 秒答对得 10 分规则的历史成绩。"));
       if (board.mine) content.append(node("p", "我的最高分 " + board.mine.score + " 分 · 第 " + board.mine.rank + " 名", "boardMine"));
       if (!board.rows.length) {
-        const message = key === "ranked" ? "完成一局积分挑战即可上榜。" : "历史榜暂无成绩。";
+        const message = key === "five-second" ? "历史榜暂无成绩。" : "完成一局挑战即可上榜。";
         content.append(node("p", message));
         return;
       }
@@ -966,7 +892,7 @@ function showHelp() {
   showDialog(
     "玩法说明",
     node("p", "积分模式每局 10 题，每题限时 10 秒。前 1 秒答对得 10 分，第 2 到 10 秒答对依次得 9 到 1 分。答错、放弃和超时均为 0 分。"),
-    node("p", "热歌模式每局 10 首。前 2 秒答对得 10 分，第 3 秒得 9 分，之后每过一秒少 1 分，答对最低得 1 分。暂停和重听期间会继续计分，成绩保存在本机。"),
+    node("p", "热歌模式每局 10 首。前 2 秒答对得 10 分，第 3 秒得 9 分，之后每过一秒少 1 分，答对最低得 1 分。暂停和重听期间会继续计时，完赛后用参赛昵称登记热歌榜成绩。"),
     node("p", "按 1–4 或 A–D 选答案，空格播放、暂停或重听，Enter 进下一题。")
   );
 }
