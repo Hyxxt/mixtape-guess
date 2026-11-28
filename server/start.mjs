@@ -52,7 +52,7 @@ const server = createServer(async (req, res) => {
       headers: req.headers,
       body: parts.length ? Buffer.concat(parts) : undefined
     });
-    const needsDatabase = url.pathname.startsWith("/api/") && !["/api/health", "/api/preview"].includes(url.pathname);
+    const needsDatabase = url.pathname.startsWith("/api/") && !["/api/health", "/api/preview", "/api/timing"].includes(url.pathname);
     const DB = needsDatabase ? await getDatabase() : null;
     if (needsDatabase && !DB) {
       res.writeHead(503, {"Content-Type":"application/json; charset=utf-8", "Cache-Control":"no-store"});

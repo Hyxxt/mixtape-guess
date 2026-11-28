@@ -133,6 +133,53 @@ test("start lead follows reported RTT and stays idempotent",async()=>{
   assert.equal(again.data.startAt,slow.data.startAt);
 });
 
+test("rank timing credits only the first authenticated echo and caps the adjustment",async()=>{
+  const DB=localDb(":memory:");
+  const api=createApi(Array.from({length:16},(_,i)=>({name:"Song "+i,id:i+1,offset:3})));
+  const origin="https://quiz.example";
+  const realNow=Date.now;
+  let now=2000000000000;
+  Date.now=()=>now;
+  async function send(route,body,cookie=""){
+    const response=await api(new Request(origin+"/api/"+route,{method:"POST",headers:{Origin:origin,Cookie:cookie,"Content-Type":"application/json"},body:JSON.stringify(body)}),{DB});
+    return {status:response.status,data:await response.json(),cookie:response.headers.get("Set-Cookie")?.split(";")[0]};
+  }
+  try {
+    const {cookie}=await send("join",{nickname:"Ranked"});
+    const other=(await send("join",{nickname:"Other"})).cookie;
+    const round=(await send("round",{},cookie)).data.round;
+    const cases=[
+      {delay:850,answerAt:1100,credit:0,earned:9,wrongOwner:true},
+      {delay:400,answerAt:1100,credit:200,earned:10},
+      {delay:850,answerAt:1201,credit:200,earned:9},
+      {delay:60,answerAt:1031,credit:30,earned:9,replay:true},
+      {delay:1201,answerAt:1100,credit:0,earned:9},
+      {delay:400,answerAt:10002,credit:200,earned:0,timeout:true}
+    ];
+    for(const [index,c] of cases.entries()){
+      const payload={round,index};
+      const start=(await send("start",{...payload,rtt:2000},cookie)).data;
+      const echo={...payload,nonce:start.timingNonce,rtt:4000};
+      const secret=JSON.parse(DB.prepare("SELECT questions FROM games WHERE id=?").bind(round).first().questions)[index];
+      assert.equal((await send("round",{},cookie)).data.started,true);
+      assert.equal((await send("replace",payload,cookie)).status,409);
+      now=start.serverNow+c.delay;
+      assert.equal((await send("timing",echo,c.wrongOwner ? other : cookie)).status,200);
+      if(c.replay){
+        now=start.serverNow+850;
+        await send("timing",echo,cookie);
+      }
+      now=start.startAt+c.answerAt;
+      const choice=c.timeout ? -1 : start.choices.indexOf(secret.name);
+      const result=(await send("answer",{...payload,choice,timeout:c.timeout},cookie)).data;
+      assert.equal(result.networkCreditMs??0,c.credit);
+      assert.equal(result.elapsedMs,c.answerAt-c.credit);
+      assert.equal(result.earned,c.earned);
+      if(c.timeout) assert.equal(result.outcome,"timeout");
+    }
+  } finally {Date.now=realNow;}
+});
+
 test("hot rounds share player nicknames and keep independent progress and rankings",async()=>{
   const DB=localDb(":memory:");
   const catalog=Array.from({length:45},(_,i)=>({name:"Song "+i,id:i+1,offset:3,hot:i<40}));
@@ -158,8 +205,10 @@ test("hot rounds share player nicknames and keep independent progress and rankin
     const initial=hot;
     hot=(await send("replace",{round:hot.round,index:0},cookie)).data;
     assert.notEqual(hot.previewPath,initial.previewPath);
+    hot=(await send("replace",{round:hot.round,index:0},cookie)).data;
     const questions=JSON.parse(DB.prepare("SELECT questions FROM games WHERE id=?").bind(hot.round).first().questions);
     assert.equal(new Set(questions.map(q=>q.id)).size,10);
+    assert.equal(new Set([...questions[0].replacedIds,questions[0].id]).size,3);
     const hotTitles=new Set(catalog.filter(song=>song.hot).map(song=>song.name));
     assert.ok(questions.every(q=>hotTitles.has(q.name) && q.choices.every(name=>hotTitles.has(name))));
 

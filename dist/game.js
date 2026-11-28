@@ -61,7 +61,7 @@ function api(path, data, parent, timeoutMs) {
     if (!request.ok) throw new Error(payload.error || "连接失败，请稍后重试。");
     return payload;
   }).then(payload => {
-    serverRtt = performance.now() - started;
+    if (path !== "timing") serverRtt = performance.now() - started;
     return payload;
   });
 }
@@ -436,10 +436,11 @@ function begin() {
   opening();
 }
 
-async function prepareQuestion(q, preloaded) {
+async function prepareQuestion(q, preloaded, { replaced = false, canReplace = !replaced } = {}) {
   const token = generation;
   const signal = controller.signal;
   showQuestion(q);
+  if (replaced) $("feedback").textContent = "已换一首，正在准备试听。";
 
   try {
     const audio = (preloaded && await preloaded) || await timedLoad(q, signal, "high");
@@ -453,8 +454,13 @@ async function prepareQuestion(q, preloaded) {
     await playCurrent();
   } catch (e) {
     if (token !== generation || question !== q) return;
-    notifyError("这首歌的原唱暂时无法加载，可重试或换一首。", () => prepareQuestion(q));
-    skipControl("换一首");
+    if (canReplace && !q.started) {
+      await replaceQuestion();
+      return;
+    }
+    notifyError(q.started ? "试听暂时无法加载，请重试。" : "试听暂时无法加载，可重试或换一首。",
+      () => prepareQuestion(q, null, { canReplace: false }));
+    if (!q.started) skipControl("换一首");
   }
 }
 
@@ -469,10 +475,12 @@ async function replaceQuestion() {
   const old = question, token = generation;
   phase = "loading";
   skipControl("", true);
+  $("status").textContent = "换歌中";
+  $("feedback").textContent = "正在准备替补曲目。";
   playControl("正在换歌…", "repeat", true);
   try {
     const next = await api("replace", { round: old.round, index: old.index }, controller.signal);
-    if (token === generation) await prepareQuestion(next);
+    if (token === generation) await prepareQuestion(next, null, { replaced: true });
   } catch (e) {
     if (token === generation) {
       notifyError(e.message, replaceQuestion);
@@ -523,7 +531,7 @@ function finishPlayback() {
   stopClock();
   displayWave(progress, false);
   player.stop();
-  if (isRanked()) { answer(-1); return; }
+  if (isRanked()) { answer(-1, true); return; }
   phase = "ready";
   hasPlayed = true;
   revealOptions();
@@ -548,8 +556,12 @@ async function playCurrent() {
       const before = performance.now();
       const scheduled = await api("start", { round: q.round, index: q.index, rtt: serverRtt }, controller.signal);
       if (token !== generation || question !== q) return;
+      q.started = true;
       q.choices = scheduled.choices;
       upcoming = scheduled.next;
+      if (scheduled.timingNonce) {
+        api("timing", { round: q.round, index: q.index, nonce: scheduled.timingNonce }, controller.signal, 2000).catch(() => {});
+      }
       const received = performance.now();
       const estimatedServer = scheduled.serverNow + Math.max(0, received - before - (scheduled.processingMs ?? 0)) / 2;
       const untilStart = scheduled.startAt - estimatedServer;
@@ -597,11 +609,14 @@ function pauseHot() {
   skipControl("跳过本题");
 }
 
-function answer(choice) {
+function answer(choice, timeout = false) {
   if (isRanked() && phase !== "live" && !(choice === -1 && phase === "scheduled")) return;
   if (!isRanked() && (!hasPlayed || !["live", "paused", "ready"].includes(phase))) return;
-  if (isRanked() && remainingPosition() >= 10000) choice = -1;
   progress = remainingPosition();
+  if (isRanked() && progress >= 10000) {
+    choice = -1;
+    timeout = true;
+  }
   stopClock();
   player.stop();
   displayWave(progress, false);
@@ -615,7 +630,7 @@ function answer(choice) {
   skipControl("", true);
   $("status").textContent = "计分中";
   $("feedback").textContent = choice === -1 ? "正在结算本题…" : "已锁定答案，正在计分…";
-  activeAnswer = { round: question.round, index: question.index, choice };
+  activeAnswer = { round: question.round, index: question.index, choice, ...(timeout ? { timeout } : {}) };
   settle();
 }
 
@@ -827,6 +842,7 @@ function showRoundReview(answers) {
     heading.append(node("strong", answer.name), node("b", "+" + answer.earned + " 分"));
     const stats = [labels[answer.outcome]];
     if (Number.isFinite(answer.elapsedMs)) stats.push(answer.elapsedMs / 1000 + " 秒");
+    if (answer.networkCreditMs > 0) stats.push("网络补偿 " + answer.networkCreditMs + " 毫秒");
     if (answer.selected && answer.outcome === "wrong") stats.push("你选了《" + answer.selected + "》");
     const controls = node("div", null, "roundReviewControls");
     const status = node("span");
@@ -838,7 +854,10 @@ function showRoundReview(answers) {
     item.append(heading, node("div", stats.join(" · "), "roundReviewMeta"), controls);
     list.append(item);
   }
-  showDialog("逐题成绩单", node("p", "用时从本题开始算到服务器收到答案。"), action("返回成绩", showResults), list);
+  const timingNote = isRanked() && scoringVersion === 1
+    ? "用时按开播到服务器收到答案计算，再减去测得的部分网络传输时间。"
+    : "用时从本题开始算到服务器收到答案。";
+  showDialog("逐题成绩单", node("p", timingNote), action("返回成绩", showResults), list);
 }
 
 function showResults() {

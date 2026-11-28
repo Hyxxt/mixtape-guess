@@ -3,6 +3,9 @@ const LIVE_MS = 2 * 60 * 60 * 1000;
 const POINTS_VERSION = 1;
 const FIVE_SECOND_VERSION = 2;
 const HOT_VERSION = 3;
+const MAX_NETWORK_CREDIT_MS = 200;
+const MAX_TIMING_SAMPLE_MS = 1200;
+const MAX_TIMING_ROUNDS = 1024;
 const RECENT_ROUNDS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -60,9 +63,10 @@ function chooseSongs(pool, recent, count) {
 }
 function roundDetails(questions) {
   return questions.map(q=>{
-    const { earned, elapsedMs=null, choice, outcome }=q.result;
+    const { earned, elapsedMs=null, choice, outcome, networkCreditMs }=q.result;
     return {name:q.name,trackId:q.id,offset:q.offset,earned,elapsedMs,
-      selected:q.choices[choice] ?? null,outcome:outcome ?? (earned>0 ? "correct" : "unscored")};
+      selected:q.choices[choice] ?? null,outcome:outcome ?? (earned>0 ? "correct" : "unscored"),
+      ...(networkCreditMs>0 ? {networkCreditMs} : {})};
   });
 }
 function clipView(round,index,q) {
@@ -71,7 +75,7 @@ function clipView(round,index,q) {
     previewPath:"/api/clip?round="+round+"&index="+index+suffix};
 }
 function view(row, q=JSON.parse(row.questions)[row.cursor]) {
-  return {...clipView(row.id,row.cursor,q),score:row.score,correct:row.hits,scoringVersion:row.scoring_version};
+  return {...clipView(row.id,row.cursor,q),score:row.score,correct:row.hits,scoringVersion:row.scoring_version,started:!!q.start};
 }
 async function fetchPreview(id) {
   const response=await fetch("https://api.deezer.com/track/"+id+"?output=json",{signal:AbortSignal.timeout(8500)});
@@ -136,6 +140,7 @@ function trackVisit(db, request) {
 export function createApi(catalog) {
   const byId=new Map(catalog.map(s=>[s.id,s]));
   const hotCatalog=catalog.filter(song=>song.hot===true);
+  const timing=new Map();
   return async function api(request, env) {
     const arrival=Date.now();
     try {
@@ -193,6 +198,17 @@ export function createApi(catalog) {
         return json({nickname},200,{"Set-Cookie":COOKIE+"="+token+"; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000"+(url.protocol==="https:"?"; Secure":"")});
       }
       if(!player) fail(401,"请先设置参赛昵称。");
+      if(post && path==="timing"){
+        const sample=timing.get(body.round);
+        if(sample && sample.player===player && sample.index===body.index && sample.nonce===body.nonce && sample.receivedAt===undefined){
+          const rtt=arrival-sample.sentAt;
+          if(rtt>=0 && rtt<=MAX_TIMING_SAMPLE_MS){
+            sample.receivedAt=arrival;
+            sample.creditMs=Math.min(MAX_NETWORK_CREDIT_MS,Math.floor(rtt/2));
+          }
+        }
+        return json({ok:true});
+      }
       if(post && path==="round"){
         const mode=body.mode ?? "ranked";
         if(mode!=="ranked" && mode!=="hot") fail(400,"玩法有误。");
@@ -240,12 +256,12 @@ export function createApi(catalog) {
         const now=Date.now();
         if(post && path==="replace"){
           if(q.start) fail(409,"已经开始计时，无法换题。");
-          const excluded=new Set(questions.map(x=>x.id));
+          const excluded=new Set(questions.flatMap(song=>[song.id,...(song.replacedIds || [])]));
           const pool=row.mode==="hot" ? hotCatalog : catalog;
           const choices=pool.filter(x=>!excluded.has(x.id));
           if(!choices.length) fail(409,"暂无替补题，请重试。");
           const recent=await recentSongIds(db,player,row.mode,id);
-          questions[idx]=makeQuestion(chooseSongs(choices,recent,1)[0],pool);
+          questions[idx]={...makeQuestion(chooseSongs(choices,recent,1)[0],pool),replacedIds:[...(q.replacedIds || []),q.id]};
         }else if(post && path==="start"){
           const next=idx+1<ROUND_SIZE ? clipView(row.id,idx+1,questions[idx+1]) : null;
           if(q.start) return json({startAt:q.start,serverNow:now,processingMs:now-arrival,choices:q.choices,next});
@@ -257,9 +273,12 @@ export function createApi(catalog) {
         }else if(post && path==="answer"){
           if(!q.start || arrival<q.start || !Number.isInteger(body.choice) || body.choice < -1 || body.choice>3) fail(400,"本题尚未开始或答案无效。");
           const correctIndex=q.choices.indexOf(q.name);
-          const elapsedMs=arrival-q.start;
+          const sample=timing.get(id);
+          const credit=row.scoring_version===POINTS_VERSION && sample?.index===idx && sample.receivedAt<=arrival ? sample.creditMs : 0;
+          const networkCreditMs=Math.min(credit,arrival-q.start);
+          const elapsedMs=arrival-q.start-networkCreditMs;
           const earned=earnedPoints(elapsedMs,body.choice===correctIndex,row.scoring_version);
-          const outcome=earned>0 ? "correct" : row.scoring_version!==HOT_VERSION && elapsedMs>10000
+          const outcome=earned>0 ? "correct" : row.scoring_version!==HOT_VERSION && (elapsedMs>10000 || (body.choice===-1 && body.timeout===true))
             ? "timeout" : body.choice===-1 ? "skipped" : "wrong";
           row.score+=earned;
           row.hits+=Number(earned>0);
@@ -267,7 +286,7 @@ export function createApi(catalog) {
           row.finished=Number(row.cursor===ROUND_SIZE);
           const next=row.finished ? null : view(row,questions[row.cursor]);
           result=q.result={correctIndex,earned,score:row.score,correct:row.hits,done:!!row.finished,name:q.name,trackId:q.id,next,
-            elapsedMs,choice:body.choice,outcome};
+            elapsedMs,choice:body.choice,outcome,...(networkCreditMs>0 ? {networkCreditMs} : {})};
           insertBest=!!row.finished;
           if(insertBest) result.details=roundDetails(questions);
         }else fail(404,"没有此操作。");
@@ -293,7 +312,14 @@ export function createApi(catalog) {
           if(path==="start") {
             result.serverNow=Date.now();
             result.processingMs=result.serverNow-arrival;
+            if(row.scoring_version===POINTS_VERSION){
+              timing.delete(id);
+              if(timing.size>=MAX_TIMING_ROUNDS) timing.delete(timing.keys().next().value);
+              result.timingNonce=crypto.randomUUID();
+              timing.set(id,{player,index:idx,nonce:result.timingNonce,sentAt:result.serverNow});
+            }
           }
+          if(insertBest) timing.delete(id);
           return json(result || view(row,questions[idx]));
         }
       }
