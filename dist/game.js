@@ -611,7 +611,11 @@ async function playCurrent() {
     timer = setTimeout(finishPlayback, Math.max(0, startedAt + 10000 - performance.now()));
     rafId = requestAnimationFrame(tick);
     if (q.index + 1 < q.total && (!isRanked() || upcoming)) {
-      nextPrepared ??= nextPacket(q.index + 1, upcoming);
+      setTimeout(() => {
+        if (token === generation && question === q && phase === "live") {
+          nextPrepared ??= nextPacket(q.index + 1, upcoming);
+        }
+      }, delay + 2500);
     }
   } catch (e) {
     if (token !== generation || question !== q) return;
@@ -646,12 +650,15 @@ function answer(choice) {
   displayWave(progress, false);
   picked = choice;
   phase = "submitting";
+  if (choice >= 0) player.sfx("click");
   buttons().forEach((b, i) => {
     b.disabled = true;
     b.classList.toggle("chosen", i === choice);
   });
   skipControl("", true);
   if (isRanked()) {
+    $("status").textContent = "计分中";
+    $("feedback").textContent = choice === -1 ? "正在结算本题…" : "已锁定答案，正在计分…";
     activeAnswer = { round: question.round, index: question.index, choice };
     settle();
     return;

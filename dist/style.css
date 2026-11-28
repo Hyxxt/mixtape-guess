@@ -319,3 +319,13 @@ dialog[open] {
   }
 }
 
+
+@media (prefers-reduced-motion: no-preference) {
+  .opt.chosen:not(.correct):not(.wrong) {
+    animation: chosenWait .75s ease-in-out infinite alternate;
+  }
+}
+@keyframes chosenWait {
+  from { opacity: 1; }
+  to { opacity: .72; }
+}
