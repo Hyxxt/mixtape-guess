@@ -88,11 +88,11 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     assert.equal(await play(b,1260),90);
     assert.equal(await play(a,11000),0);
     let board=(await send("board",null,b)).data;
-    assert.deepEqual(board.rows.map(r=>[r.nickname,r.score,r.rank]),[["A",100,1],["B",90,2]]);
-    assert.equal(board.mine.rank,2);
+    assert.deepEqual(board.rows.map(r=>[r.nickname,r.score,r.rank]),[["A",100,1],["黄xx",92,2],["B",90,3]]);
+    assert.equal(board.mine.rank,3);
     assert.equal(await play(b,1000),100);
     board=(await send("board")).data;
-    assert.deepEqual(board.rows.map(r=>r.rank),[1,1]);
+    assert.deepEqual(board.rows.map(r=>r.rank),[1,1,3]);
     assert.equal(board.mine,null);
     assert.equal(await play(a,5260,2),90);
     const historical=(await send("board?season=five-second",null,a)).data;
@@ -106,7 +106,7 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     const weekly=(await send("board?season=weekly",null,a)).data;
     assert.equal(weekly.weekStart,Date.parse("2026-11-22T16:00:00Z"));
     assert.equal(weekly.weekEnd,weekEnd);
-    assert.deepEqual(weekly.rows,board.rows);
+    assert.deepEqual(weekly.rows,board.rows.filter(r=>r.nickname!=="黄xx"));
     assert.deepEqual(weekly.mine,{score:100,rank:1});
     now=weekEnd;
     assert.deepEqual((await send("board?season=weekly",null,a)).data,
@@ -234,7 +234,7 @@ test("hot rounds share player nicknames and keep independent progress and rankin
     assert.equal(total,57);
     assert.equal(hot,null);
     assert.deepEqual((await send("round",{},cookie)).data,ranked);
-    assert.deepEqual((await send("board",null,cookie)).data,{rows:[],mine:null});
+    assert.deepEqual((await send("board",null,cookie)).data,{rows:[{nickname:"黄xx",score:92,correct:10,rank:1}],mine:null});
     assert.deepEqual((await send("board?season=weekly",null,cookie)).data.rows,[]);
     const board=(await send("board?season=hot",null,cookie)).data;
     assert.deepEqual(board.rows.map(r=>[r.nickname,r.score,r.rank]),[["黄xx",100,1],["热歌玩家",57,2]]);

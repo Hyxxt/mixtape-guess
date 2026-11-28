@@ -29,6 +29,13 @@
       "when": 1795874708962,
       "tag": "0003_weekly_rankings",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795881177405,
+      "tag": "0004_reported_ranked_score",
+      "breakpoints": true
     }
   ]
 }
