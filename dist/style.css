@@ -7,6 +7,9 @@
 .hero .sticker{background:var(--lime)}
 .hero .tags span{background:#f2ebff}
 .hero h1{letter-spacing:-2px}
+.station-jay .hero{background:#c6e6fb}
+.station-jay .hero .edition{color:#d5efff}
+.station-jay .hero .tags span,.station-jay .hero .sticker{background:#e8f6ff}
 .profile{margin-left:auto;background:#f1e8ff}.profile+.help{margin-left:0}.navwrap{gap:clamp(9px,2.5vw,38px)}.modeSwitch{display:inline-flex;border:1.5px solid var(--ink);border-radius:7px;overflow:hidden;margin-left:20px}.modeSwitch button{border:0;padding:6px 12px;background:#fffefa;font-size:14px;font-weight:700}.modeSwitch button[aria-pressed=true],.modeSwitch button.active{background:var(--lilac)}.sectionhead{justify-content:flex-start}.score{margin-left:auto}.tags b{font-weight:inherit}.opt:disabled{cursor:default}.waveform{contain:layout paint}.soundstage,.heroart{contain:paint}.waveform i{transition:none}button.primary:disabled{background:#edf2df}.modalhead+div input{display:block;width:100%;padding:10px 12px;margin:12px 0;border:1.5px solid #333;border-radius:7px;font:inherit}dialog .logrow{gap:10px}dialog .logrow span{overflow-wrap:anywhere}.profile [data-label]{max-width:11ch;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
 button { touch-action: manipulation; }
 .opt > span:nth-child(2), #feedback { min-width: 0; overflow-wrap: anywhere; }
@@ -73,7 +76,7 @@ button { touch-action: manipulation; }
   .sectionicon { width: 26px; height: 26px; }
   .sectionicon svg { width: 17px; height: 17px; }
   .modeSwitch {
-    grid-area: mode; display: grid; grid-template-columns: 1fr 1fr;
+    grid-area: mode; display: grid; grid-template-columns: repeat(3, minmax(0,1fr));
     margin: 0; padding: 2px; border: 1px solid #a1a399; background: #eceee6; border-radius: 10px;
   }
   .modeSwitch button { min-height: 44px; border-radius: 7px; padding: 4px 10px; font-size: 15px; background: transparent; }
@@ -138,7 +141,7 @@ button { touch-action: manipulation; }
     overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   }
   .in-game .modeSwitch { width: fit-content; }
-  .in-game .modeSwitch button { min-width: 67px; padding: 4px 9px; font-size: 14px; }
+  .in-game .modeSwitch button { min-width: 0; padding: 4px 7px; font-size: 13px; }
   .in-game .score { justify-self: end; }
   .in-game .cards { gap: 10px; }
   .in-game .panel { padding: 12px; }
@@ -182,6 +185,9 @@ button { touch-action: manipulation; }
   .navbtn svg,.help svg{width:16px;height:16px}
   .navwrap .profile{max-width:110px;padding:6px 10px}
   #helpBtn{padding:7px 10px}
+  .sectionhead{flex-wrap:wrap;gap:10px}
+  .sectionhead h2{font-size:24px}
+  .modeSwitch,#startCta{margin-left:0}
 }
 /* Short phones: the fixed bottom bar eats the last answer row; hide it during play. */
 @media (max-width:720px) and (max-height:650px){
@@ -194,6 +200,7 @@ button { touch-action: manipulation; }
 .boardright strong{white-space:nowrap}
 .boardTabs{display:flex;gap:8px;margin-top:6px}
 .boardTabs button{background:#fffefa}
+.boardTabs button{min-width:0;padding:5px 3px;font-size:14px}
 .boardTabs button[aria-pressed=true]{background:var(--lilac)}
 .boardRanges:not([hidden]){display:flex;gap:8px}
 .boardRanges button{width:auto;padding:0 15px;background:#fffefa;font-size:14px}
@@ -214,6 +221,7 @@ button { touch-action: manipulation; }
 .roundReviewHeading b{white-space:nowrap;font-family:var(--mono)}
 .roundReviewMeta,.roundReviewControls span{font-size:13px;color:#595b52}
 .roundReviewControls .textbtn{min-height:36px;color:#5b3aa8}
+footer [hidden]{display:none}
 .score-hits{margin-left:3px;padding-left:9px;border-left:1px solid #b8b9af;white-space:nowrap}
 #skipBtn.reviewNext{display:none}
 @media(max-width:720px){

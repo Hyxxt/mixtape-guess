@@ -6,8 +6,14 @@ const icon = name => '<svg aria-hidden="true"><use href="#' + name + '"/></svg>'
 const modal = $("modal");
 const historyKey = "blind-test-fm.eason.history.v1";
 const roundSize = 10;
+const modes = {
+  ranked: { label: "积分模式", start: "开始积分挑战", count: "total", hint: "听十秒陈奕迅原唱，猜得越快，得分越高。", mystery: "十秒猜歌挑战", board: "积分榜" },
+  hot: { label: "热歌模式", start: "开始热歌挑战", count: "hot", hint: "从陈奕迅代表热歌中抽 10 首，可暂停、重听。", mystery: "陈奕迅热门歌曲", board: "热歌榜" },
+  jay: { label: "周杰伦专区", start: "开始周杰伦挑战", count: "jay", hint: "听十秒周杰伦原唱，从四个歌名中选出答案。", mystery: "周杰伦猜歌挑战", board: "周杰伦榜" }
+};
 
-let mode = "ranked", phase = "home", nickname = "", question = null, clip = null;
+let mode = new URLSearchParams(location.search).get("mode") === "jay" ? "jay" : "ranked";
+let phase = "home", nickname = "", question = null, clip = null;
 let score = 0, correctCount = 0, streak = 0, picked = null, progress = 0, startedAt = 0;
 let timer, rafId = 0, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
 let hasPlayed = false, currentResult, lastFailure, modalVersion = 0;
@@ -17,9 +23,10 @@ let reviewPlayback;
 
 const reviewDuration = 2400;
 const autoAdvanceEnabled = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-const isRanked = () => mode === "ranked";
+const isTimed = () => mode !== "hot";
+const isJay = () => mode === "jay";
 const buttons = () => [...$("options").querySelectorAll("button")];
-const modeLabel = () => isRanked() ? "积分模式" : "热歌模式";
+const modeLabel = () => modes[mode].label;
 
 function node(tag, value, className) {
   const item = document.createElement(tag);
@@ -139,11 +146,11 @@ function displayWave(milliseconds, live = false) {
     }
   }
 
-  const seconds = Math.max(0, Math.min(10, isRanked() ? Math.ceil((10000 - milliseconds) / 1000) : Math.floor(milliseconds / 1000)));
+  const seconds = Math.max(0, Math.min(10, isTimed() ? Math.ceil((10000 - milliseconds) / 1000) : Math.floor(milliseconds / 1000)));
   const text = "00:" + pad(seconds);
   const el = $("elapsed");
   if (el.textContent !== text) el.textContent = text;
-  el.classList.toggle("urgent", live && isRanked() && seconds <= 3 && seconds > 0);
+  el.classList.toggle("urgent", live && isTimed() && seconds <= 3 && seconds > 0);
 }
 
 function newWave(seed) {
@@ -230,18 +237,26 @@ function renderHits() {
 }
 
 function startLabel() {
-  return isRanked() ? "开始积分挑战" : "开始热歌挑战";
+  return modes[mode].start;
 }
 
 function setModeUI() {
-  for (const id of ["ranked", "hot"]) {
+  for (const id of Object.keys(modes)) {
     $(id).classList.toggle("active", mode === id);
     $(id).setAttribute("aria-pressed", String(mode === id));
   }
+  const artist = isJay() ? "周杰伦" : "陈奕迅";
+  document.body.classList.toggle("station-jay", isJay());
+  $("headline").textContent = isJay() ? modeLabel() : artist + "专场";
+  $("stationEdition").textContent = artist + " · 原唱专场";
+  $("stationSticker").textContent = artist + " FM";
+  $("stationFooter").replaceChildren(artist + "电台 ", node("b", "✳"));
+  $("deezerSource").hidden = isJay();
+  $("appleSource").hidden = !isJay();
   $("modeTitle").textContent = modeLabel();
-  $("heroTagline").textContent = isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "从陈奕迅代表热歌中抽 10 首，可暂停、重听。";
+  $("heroTagline").textContent = modes[mode].hint;
   $("startCta").textContent = startLabel();
-  $("catalogCount").textContent = isRanked() ? $("catalogCount").dataset.total : $("catalogCount").dataset.hot;
+  $("catalogCount").textContent = $("catalogCount").dataset[modes[mode].count];
   $("track").textContent = question ? "第 " + pad(question.index + 1) + " / " + roundSize + " 首" : "每局 " + roundSize + " 首";
   $("points").textContent = String(score).padStart(3, "0");
   renderHits();
@@ -258,10 +273,10 @@ function showHome() {
   $("choiceEyebrowText").textContent = "玩法";
   $("choiceTag").textContent = "计分";
   document.querySelector(".choices h3").textContent = "计分规则";
-  $("mystery").textContent = isRanked() ? "十秒猜歌挑战" : "陈奕迅热门歌曲";
+  $("mystery").textContent = modes[mode].mystery;
   $("status").textContent = "就绪";
-  $("feedback").textContent = isRanked() ? "完成 10 题即可上榜。" : "完成 10 题即可登上热歌榜。";
-  const samples = isRanked()
+  $("feedback").textContent = "完成 10 题即可登上" + modes[mode].board + "。";
+  const samples = isTimed()
     ? [["前 1 秒答对", "10 分"], ["第 2～10 秒答对", "9～1 分"], ["答错或超时", "0 分"], ["本局满分", "100 分"]]
     : [["前 2 秒答对", "10 分"], ["之后每过 1 秒", "少 1 分"], ["答对最低得分", "1 分"], ["答错或跳过", "0 分"]];
   const lines = samples.map(([key, value]) => {
@@ -290,7 +305,16 @@ function notifyError(message, retry) {
 
 function chooseMode(target) {
   if (mode === target) return;
-  function switchNow() { closeDialog(); reset(); mode = target; showHome(); }
+  function switchNow() {
+    closeDialog();
+    reset();
+    mode = target;
+    const url = new URL(location.href);
+    if (isJay()) url.searchParams.set("mode", "jay");
+    else url.searchParams.delete("mode");
+    if (url.href !== location.href) window.history.replaceState(null, "", url);
+    showHome();
+  }
   if (phase === "home" || phase === "finished" || (phase === "review" && currentResult?.done)) {
     switchNow();
     return;
@@ -316,7 +340,7 @@ function profileForm(after) {
   save.type = "submit";
   alert.setAttribute("role", "status");
   form.append(label, field, alert, save);
-  showDialog(nickname ? "我的昵称" : "设置参赛昵称", node("p", "积分榜和热歌榜会使用同一个参赛昵称。"), form);
+  showDialog(nickname ? "我的昵称" : "设置参赛昵称", node("p", "所有榜单使用同一个参赛昵称。"), form);
   field.focus();
 
   form.onsubmit = async event => {
@@ -508,9 +532,9 @@ function renderLive() {
   revealOptions();
   setStagePlaying(true);
   $("status").textContent = "播放中";
-  $("feedback").textContent = isRanked() ? `前 ${scoringVersion === 1 ? 1 : 5} 秒答对得 10 分。` : "前 2 秒答对得 10 分，重听时计分继续。";
-  playControl(isRanked() ? "限时答题中" : "暂停播放", isRanked() ? "clock" : "pause", isRanked());
-  skipControl(isRanked() ? "放弃本题" : "跳过本题");
+  $("feedback").textContent = isTimed() ? `前 ${scoringVersion === 2 ? 5 : 1} 秒答对得 10 分。` : "前 2 秒答对得 10 分，重听时计分继续。";
+  playControl(isTimed() ? "限时答题中" : "暂停播放", isTimed() ? "clock" : "pause", isTimed());
+  skipControl(isTimed() ? "放弃本题" : "跳过本题");
 }
 
 function tick() {
@@ -531,7 +555,7 @@ function finishPlayback() {
   stopClock();
   displayWave(progress, false);
   player.stop();
-  if (isRanked()) { answer(-1, true); return; }
+  if (isTimed()) { answer(-1, true); return; }
   phase = "ready";
   hasPlayed = true;
   revealOptions();
@@ -552,7 +576,7 @@ async function playCurrent() {
     if (token !== generation || question !== q) return;
     let elapsed = progress === 10000 ? 0 : progress, delay = 0;
     let upcoming;
-    if (isRanked() || !hasPlayed) {
+    if (isTimed() || !hasPlayed) {
       const before = performance.now();
       const scheduled = await api("start", { round: q.round, index: q.index, rtt: serverRtt }, controller.signal);
       if (token !== generation || question !== q) return;
@@ -567,7 +591,7 @@ async function playCurrent() {
       const untilStart = scheduled.startAt - estimatedServer;
       delay = Math.max(0, untilStart);
       elapsed = Math.max(0, -untilStart);
-      if (!isRanked() && elapsed >= 10000) elapsed = 0;
+      if (!isTimed() && elapsed >= 10000) elapsed = 0;
     }
     startedAt = performance.now() + delay - elapsed;
     phase = "scheduled";
@@ -590,7 +614,7 @@ async function playCurrent() {
 }
 
 function pauseHot() {
-  if (isRanked() || (phase !== "live" && phase !== "scheduled")) return;
+  if (isTimed() || (phase !== "live" && phase !== "scheduled")) return;
   progress = remainingPosition();
   stopClock();
   player.stop();
@@ -610,10 +634,10 @@ function pauseHot() {
 }
 
 function answer(choice, timeout = false) {
-  if (isRanked() && phase !== "live" && !(choice === -1 && phase === "scheduled")) return;
-  if (!isRanked() && (!hasPlayed || !["live", "paused", "ready"].includes(phase))) return;
+  if (isTimed() && phase !== "live" && !(choice === -1 && phase === "scheduled")) return;
+  if (!isTimed() && (!hasPlayed || !["live", "paused", "ready"].includes(phase))) return;
   progress = remainingPosition();
-  if (isRanked() && progress >= 10000) {
+  if (isTimed() && progress >= 10000) {
     choice = -1;
     timeout = true;
   }
@@ -697,7 +721,7 @@ function finalAnswer(result) {
   playControl(result.done ? "查看成绩" : "下一题", result.done ? "bars" : "skip");
   skipControl(result.done ? "查看成绩" : "下一题");
   clip = null;
-  if (result.done && !isRanked()) rememberHistory(correctCount, question.total, score);
+  if (result.done && !isTimed()) rememberHistory(correctCount, question.total, score);
   if (!nextPrepared && result.next) prefetch(result.next);
   scheduleAdvance();
 }
@@ -760,8 +784,8 @@ async function advance() {
   await takeNext();
 }
 
-function shareSummary() {
-  return "我在「猜歌电台」的" + modeLabel() + "拿了 " + score + " 分，答对 " + correctCount + "/" + roundSize + " 题，来挑战我：" + location.origin + "/";
+function shareSummary(url) {
+  return "我在「猜歌电台」的" + modeLabel() + "拿了 " + score + " 分，答对 " + correctCount + "/" + roundSize + " 题，来挑战我：" + url;
 }
 
 function copyText(text) {
@@ -778,11 +802,12 @@ function copyText(text) {
 }
 
 async function shareResult(status) {
-  const text = shareSummary();
+  const url = location.origin + (isJay() ? "/?mode=jay" : "/");
+  const text = shareSummary(url);
   status.hidden = false;
   try {
     if (navigator.share) {
-      await navigator.share({ title: "猜歌电台 · 陈奕迅专场", text, url: location.origin + "/" });
+      await navigator.share({ title: "猜歌电台 · " + (isJay() ? "周杰伦专区" : "陈奕迅专场"), text, url });
       status.textContent = "已打开分享面板。";
       return;
     }
@@ -874,13 +899,21 @@ function showRoundReview(answers) {
     const replay = node("button", "重听", "textbtn");
     replay.type = "button";
     replay.onclick = () => replayAnswer(answer, replay, status);
-    controls.append(replay, status);
+    controls.append(replay);
+    if (answer.songUrl) {
+      const link = node("a", "Apple Music", "textbtn");
+      link.href = answer.songUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      controls.append(link);
+    }
+    controls.append(status);
     item.append(heading, node("div", stats.join(" · "), "roundReviewMeta"));
     if (answer.msToNextPoint > 0) item.append(node("div", speedTipText(answer), "speedTip"));
     item.append(controls);
     list.append(item);
   }
-  const timingNote = isRanked() && scoringVersion === 1
+  const timingNote = isTimed() && scoringVersion !== 2
     ? "用时按开播到服务器收到答案计算，再减去测得的部分网络传输时间。"
     : "用时从本题开始算到服务器收到答案。";
   showDialog("逐题成绩单", node("p", timingNote), action("返回成绩", showResults), list);
@@ -889,7 +922,7 @@ function showRoundReview(answers) {
 function showResults() {
   const line = node("div", String(score), "bigscore");
   line.append(node("small", " / 100 分"));
-  const season = isRanked() ? (scoringVersion === 2 ? "five-second" : "ranked") : "hot";
+  const season = scoringVersion === 2 ? "five-second" : mode;
   const base = "共 " + roundSize + " 题，答对 " + correctCount + " 题。";
   const details = node("p", base + "正在读取个人排名…");
   const shareStatus = node("p", null, "sharemsg");
@@ -905,7 +938,7 @@ function showResults() {
     parts.push(action("逐题成绩单", () => showRoundReview(answers)));
   }
   parts.push(shareStatus, share, action("再来一局", () => { closeDialog(); begin(); }));
-  parts.push(action(isRanked() ? "查看排行榜" : "查看热歌榜", () => showBoard(season)));
+  parts.push(action(isJay() ? "查看周杰伦榜" : isTimed() ? "查看排行榜" : "查看热歌榜", () => showBoard(season)));
   const version = showDialog(modeLabel() + "成绩", ...parts);
   api("board?season=" + season).then(board => {
     if (version !== modalVersion || !modal.open) return;
@@ -937,7 +970,7 @@ function showBoard(season = "ranked") {
   const version = showDialog("排行榜", tabs, ranges, status, content);
   let requestId = 0;
   let range = "ranked";
-  const choices = [["ranked", "积分榜"], ["hot", "热歌榜"], ["five-second", "历史榜"]].map(([key, label]) => {
+  const choices = [...Object.entries(modes).map(([key, config]) => [key, config.board]), ["five-second", "历史榜"]].map(([key, label]) => {
     const button = action(label, () => loadBoard(key));
     tabs.append(button);
     return { key, button };
@@ -991,14 +1024,14 @@ async function showHistory() {
   const version = showDialog("我的战绩", container);
   const blocks = [];
   try {
-    const board = await api("board");
+    const board = await api(isJay() ? "board?season=jay" : "board");
     if (version !== modalVersion || !modal.open) return;
     if (board.mine) {
       const best = node("div", null, "logrow");
-      best.append(node("span", "积分模式最高"), node("strong", board.mine.score + " 分"), node("b", "第 " + board.mine.rank + " 名"));
+      best.append(node("span", isJay() ? "周杰伦专区最高" : "积分模式最高"), node("strong", board.mine.score + " 分"), node("b", "第 " + board.mine.rank + " 名"));
       blocks.push(best);
     } else {
-      blocks.push(node("p", "完成一局积分挑战即可上榜。"));
+      blocks.push(node("p", isJay() ? "完成一局周杰伦挑战即可上榜。" : "完成一局积分挑战即可上榜。"));
     }
   } catch {
     if (version !== modalVersion || !modal.open) return;
@@ -1023,12 +1056,13 @@ function showHelp() {
     "玩法说明",
     node("p", "积分模式每局 10 题，每题限时 10 秒。前 1 秒答对得 10 分，第 2 到 10 秒答对依次得 9 到 1 分。答错、放弃和超时均为 0 分。"),
     node("p", "热歌模式每局 10 首。前 2 秒答对得 10 分，第 3 秒得 9 分，之后每过一秒少 1 分，答对最低得 1 分。暂停和重听期间会继续计时，完赛后用参赛昵称登记热歌榜成绩。"),
+    node("p", "周杰伦专区从周杰伦曲库抽 10 首，沿用积分模式的计分规则，成绩记入周杰伦榜。"),
     node("p", "按 1–4 或 A–D 选答案，空格播放、暂停或重听，Enter 进下一题。")
   );
 }
 
 function canOpenUtility() {
-  return !(isRanked() && ["starting", "scheduled", "live", "submitting", "submitRetry"].includes(phase));
+  return !(isTimed() && ["starting", "scheduled", "live", "submitting", "submitRetry"].includes(phase));
 }
 
 function openUtility(open) {
@@ -1057,7 +1091,8 @@ $("skipBtn").onclick = () => {
 };
 $("ranked").onclick = () => chooseMode("ranked");
 $("hot").onclick = () => chooseMode("hot");
-$("board").onclick = () => openUtility(() => showBoard());
+$("jay").onclick = () => chooseMode("jay");
+$("board").onclick = () => openUtility(() => showBoard(isJay() ? "jay" : "ranked"));
 $("history").onclick = () => openUtility(showHistory);
 $("profile").onclick = () => openUtility(() => profileForm());
 $("helpBtn").onclick = () => openUtility(showHelp);
@@ -1087,7 +1122,7 @@ document.addEventListener("visibilitychange", () => {
     stopReviewPlayback();
     pauseHot();
   }
-  else if (isRanked() && (phase === "scheduled" || phase === "live")) {
+  else if (isTimed() && (phase === "scheduled" || phase === "live")) {
     cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(tick);
   }
@@ -1098,7 +1133,7 @@ document.addEventListener("keydown", event => {
   const target = event.target;
   if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
   const key = event.key.toLowerCase();
-  if (phase === "live" || (!isRanked() && (phase === "ready" || phase === "paused"))) {
+  if (phase === "live" || (!isTimed() && (phase === "ready" || phase === "paused"))) {
     const index = { "1": 0, "2": 1, "3": 2, "4": 3, "a": 0, "b": 1, "c": 2, "d": 3 }[key];
     if (index !== undefined) {
       const list = buttons();
@@ -1107,7 +1142,7 @@ document.addEventListener("keydown", event => {
     }
   }
   if (key === " " || key === "spacebar") {
-    if (!isRanked() && phase === "live") { event.preventDefault(); pauseHot(); }
+    if (!isTimed() && phase === "live") { event.preventDefault(); pauseHot(); }
     else if (clip && (phase === "ready" || phase === "paused" || phase === "startRetry")) { event.preventDefault(); playCurrent(); }
     return;
   }

@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#d4c4ff">
-<meta name="description" content="听十秒陈奕迅原唱，从四个歌名中找出陈奕迅的歌。">
-<title>陈奕迅专场 · 猜歌电台</title>
+<meta name="description" content="听十秒原唱，四选一猜歌名。陈奕迅专场与周杰伦专区，每局 10 题。">
+<title>猜歌电台 · 陈奕迅与周杰伦</title>
 <link rel="canonical" href="https://caige-radio.onrender.com/">
 <meta property="og:site_name" content="猜歌电台">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:title" content="陈奕迅专场 · 猜歌电台">
-<meta property="og:description" content="听十秒陈奕迅原唱，四选一猜歌名。每局 10 题，挑战 100 分。">
+<meta property="og:title" content="猜歌电台 · 陈奕迅与周杰伦">
+<meta property="og:description" content="听十秒原唱，四选一猜歌名。每局 10 题，挑战 100 分。">
 <meta property="og:url" content="https://caige-radio.onrender.com/">
 <meta property="og:image" content="https://caige-radio.onrender.com/og-cover.jpg">
 <meta property="og:image:type" content="image/jpeg">
@@ -18,8 +18,8 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="猜歌电台 · 陈奕迅专场">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="陈奕迅专场 · 猜歌电台">
-<meta name="twitter:description" content="听十秒陈奕迅原唱，四选一猜歌名。每局 10 题，挑战 100 分。">
+<meta name="twitter:title" content="猜歌电台 · 陈奕迅与周杰伦">
+<meta name="twitter:description" content="听十秒原唱，四选一猜歌名。每局 10 题，挑战 100 分。">
 <meta name="twitter:image" content="https://caige-radio.onrender.com/og-cover.jpg">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23cbfa60'/%3E%3Cpath d='M8 17v6m6-13v20m6-16v12m6-18v24m6-16v8' fill='none' stroke='%23171717' stroke-width='3'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://cdnt-preview.dzcdn.net" crossorigin>
@@ -50,9 +50,9 @@
 <button id="profile" class="help profile"><span data-label>游客参赛</span></button><button class="help" id="helpBtn" aria-label="玩法说明" title="玩法说明"><svg><use href="#help"/></svg>玩法说明</button>
 </div></header>
 <main>
-<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img width="1080" height="720" fetchpriority="high" src="boombox.webp" alt=""><span class="sticker">陈奕迅 FM</span></div>
-<div class="herocopy"><span class="edition"><svg><use href="#signal"/></svg> 陈奕迅 · 原唱专场</span><h1 id="headline">陈奕迅专场</h1><p id="heroTagline">听十秒陈奕迅原唱，猜得越快，得分越高。</p><div class="tags"><span><svg><use href="#stack"/></svg>曲库 <b id="catalogCount" data-total="256" data-hot="40">256</b> 首 · 每局 <b>10</b> 题</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
-<section id="game" aria-label="听曲猜歌"><div class="sectionhead"><h2><span class="sectionicon"><svg><use href="#bolt"/></svg></span><span id="modeTitle">积分模式</span></h2><div class="modeSwitch" role="group" aria-label="玩法"><button id="ranked" aria-pressed="true">积分模式</button><button id="hot" aria-pressed="false">热歌模式</button></div><button id="startCta" class="primary" type="button">开始积分挑战</button><div class="score"><span>本局</span><strong id="points">000</strong><span>分</span><span id="hits" class="score-hits">答对 0/10</span></div></div>
+<section class="hero" aria-labelledby="headline"><div class="heroart" aria-hidden="true"><div class="printdots"></div><div class="flare f1">✦</div><div class="flare f2">✧</div><img width="1080" height="720" fetchpriority="high" src="boombox.webp" alt=""><span class="sticker" id="stationSticker">陈奕迅 FM</span></div>
+<div class="herocopy"><div class="edition"><svg><use href="#signal"/></svg> <span id="stationEdition">陈奕迅 · 原唱专场</span></div><h1 id="headline">陈奕迅专场</h1><p id="heroTagline">听十秒陈奕迅原唱，猜得越快，得分越高。</p><div class="tags"><span><svg><use href="#stack"/></svg>曲库 <b id="catalogCount" data-total="256" data-hot="40" data-jay="0">256</b> 首 · 每局 <b>10</b> 题</span><span><svg><use href="#clock"/></svg>10 秒片段</span></div></div></section>
+<section id="game" aria-label="听曲猜歌"><div class="sectionhead"><h2><span class="sectionicon"><svg><use href="#bolt"/></svg></span><span id="modeTitle">积分模式</span></h2><div class="modeSwitch" role="group" aria-label="玩法与专区"><button id="ranked" aria-pressed="true">积分模式</button><button id="hot" aria-pressed="false">热歌模式</button><button id="jay" aria-pressed="false">周杰伦专区</button></div><button id="startCta" class="primary" type="button">开始积分挑战</button><div class="score"><span>本局</span><strong id="points">000</strong><span>分</span><span id="hits" class="score-hits">答对 0/10</span></div></div>
 <div class="cards">
 <article class="player panel"><div class="cardhead"><span class="eyebrow"><i></i> 原唱播放器</span><span class="track" id="track"></span></div>
 <h3 id="mystery"></h3>
@@ -61,7 +61,7 @@
 <div class="transport" id="transportRow" hidden><button id="playBtn" class="primary"></button><button id="muteBtn" class="soundbtn" aria-label="静音" title="静音"><svg><use href="#vol"/></svg></button></div></article>
 <article class="choices panel"><div class="cardhead"><span class="eyebrow" id="choiceEyebrow"><i></i> <span id="choiceEyebrowText">猜歌</span></span><span class="choicetag" id="choiceTag">四选一</span></div><h3>这是哪首歌？</h3><div id="options"></div><div id="answerFoot"><span id="feedback" role="status">听原唱，选出你的答案。</span><button id="skipBtn" class="textbtn">跳过此题<svg><use href="#skip"/></svg></button></div></article>
 </div></section>
-<footer><span><svg><use href="#phones"/></svg>原唱试听来自 Deezer · 需联网</span><span>陈奕迅电台 <b>✳</b></span></footer>
+<footer><span><svg><use href="#phones"/></svg><span id="deezerSource">原唱试听来自 Deezer</span><a id="appleSource" href="https://music.apple.com/cn/artist/jay-chou/300117743" target="_blank" rel="noopener" hidden>原唱试听来自 Apple Music</a></span><span id="stationFooter">陈奕迅电台 <b>✳</b></span></footer>
 </main>
 <dialog id="modal"><div class="modalhead"><span class="eyebrow"><i></i> 盲听电台</span><button id="close" aria-label="关闭">×</button></div><div id="modalContent"></div></dialog>
 <script src="music.js?v=mobile3" defer></script><script src="game.js?v=mobile3" defer></script>

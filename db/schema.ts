@@ -22,6 +22,10 @@ export const hotBest = sqliteTable("hot_best", {
   owner:text("owner").primaryKey().references(()=>players.id), score:integer("score").notNull(),
   hits:integer("hits").notNull(), achieved:integer("achieved").notNull()
 }, t=>[index("hot_scores_sorted").on(t.score,t.hits,t.achieved)]);
+export const jayBest = sqliteTable("jay_best", {
+  owner:text("owner").primaryKey().references(()=>players.id), score:integer("score").notNull(),
+  hits:integer("hits").notNull(), achieved:integer("achieved").notNull()
+}, t=>[index("jay_scores_sorted").on(t.score,t.hits,t.achieved)]);
 export const weeklyBest = sqliteTable("weekly_best", {
   weekStart:integer("week_start").notNull(), owner:text("owner").notNull().references(()=>players.id),
   score:integer("score").notNull(), hits:integer("hits").notNull(), achieved:integer("achieved").notNull()

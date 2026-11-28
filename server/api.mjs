@@ -3,6 +3,7 @@ const LIVE_MS = 2 * 60 * 60 * 1000;
 const POINTS_VERSION = 1;
 const FIVE_SECOND_VERSION = 2;
 const HOT_VERSION = 3;
+const JAY_VERSION = 4;
 const SCORE_STEP_MS = 1000;
 const MAX_QUESTION_SCORE = 10;
 const MAX_NETWORK_CREDIT_MS = 200;
@@ -15,6 +16,7 @@ const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 const COOKIE = "eason_player_v1";
 const previewCache = new Map();
 const previewPending = new Map();
+const usesCompetitiveScoring = version => version===POINTS_VERSION || version===JAY_VERSION;
 class Problem extends Error {
   constructor(status, message) {super(message); this.status = status;}
 }
@@ -64,7 +66,7 @@ function chooseSongs(pool, recent, count) {
   return [...fresh,...shuffle(pool.filter(song=>recent.has(song.id))).slice(0,count-fresh.length)];
 }
 function roundDetails(questions, scoringVersion) {
-  const showSpeedTips=scoringVersion===POINTS_VERSION && questions.every(q=>q.result.earned>0);
+  const showSpeedTips=usesCompetitiveScoring(scoringVersion) && questions.every(q=>q.result.earned>0);
   return questions.map(q=>{
     const { earned, elapsedMs=null, choice, outcome, networkCreditMs }=q.result;
     const nextPointDeadline=(MAX_QUESTION_SCORE-earned)*SCORE_STEP_MS;
@@ -105,6 +107,7 @@ async function preview(id) {
 }
 function scoreTable(version) {
   if(version===HOT_VERSION) return "hot_best";
+  if(version===JAY_VERSION) return "jay_best";
   return version===FIVE_SECOND_VERSION ? "points_best" : "best";
 }
 function shanghaiWeekStart(timestamp) {
@@ -144,9 +147,15 @@ function trackVisit(db, request) {
   } catch {}
 }
 
-export function createApi(catalog) {
+export function createApi(catalog, jayCatalog=[]) {
   const byId=new Map(catalog.map(s=>[s.id,s]));
-  const hotCatalog=catalog.filter(song=>song.hot===true);
+  const jayById=new Map(jayCatalog.map(s=>[s.id,s]));
+  const modes=new Map([
+    ["ranked",{pool:catalog,scoringVersion:POINTS_VERSION}],
+    ["hot",{pool:catalog.filter(song=>song.hot===true),scoringVersion:HOT_VERSION}],
+    ["jay",{pool:jayCatalog,scoringVersion:JAY_VERSION}]
+  ]);
+  const playablePreview=id=>jayById.get(id)?.previewUrl ?? preview(id);
   const timing=new Map();
   return async function api(request, env) {
     const arrival=Date.now();
@@ -174,9 +183,8 @@ export function createApi(catalog) {
       if(!post && path==="board"){
         const season=url.searchParams.get("season");
         // The previous frontend used season=points for scores earned with the five-second rule.
-        let version=POINTS_VERSION;
-        if(season==="hot") version=HOT_VERSION;
-        if(season==="five-second" || season==="points") version=FIVE_SECOND_VERSION;
+        const version=season==="five-second" || season==="points"
+          ? FIVE_SECOND_VERSION : modes.get(season)?.scoringVersion ?? POINTS_VERSION;
         const weekly=season==="weekly";
         const weekStart=shanghaiWeekStart(arrival);
         const args=weekly ? [weekStart] : [];
@@ -190,8 +198,8 @@ export function createApi(catalog) {
       }
       if(!post && path==="preview"){
         const id=Number(url.searchParams.get("id"));
-        if(!byId.has(id)) fail(404,"曲目不存在。");
-        return json({url:await preview(id)});
+        if(!byId.has(id) && !jayById.has(id)) fail(404,"曲目不存在。");
+        return json({url:await playablePreview(id)});
       }
       if(post && path==="join"){
         const nickname=typeof body.nickname==="string"?body.nickname.trim().normalize("NFC"):"";
@@ -218,9 +226,9 @@ export function createApi(catalog) {
       }
       if(post && path==="round"){
         const mode=body.mode ?? "ranked";
-        if(mode!=="ranked" && mode!=="hot") fail(400,"玩法有误。");
-        const pool=mode==="hot" ? hotCatalog : catalog;
-        const scoringVersion=mode==="hot" ? HOT_VERSION : POINTS_VERSION;
+        const config=modes.get(mode);
+        if(!config) fail(400,"玩法有误。");
+        const {pool,scoringVersion}=config;
         const now=Date.now();
         const active=await first(`SELECT g.* FROM players p
           LEFT JOIN games g ON g.owner=p.id AND g.mode=? AND g.finished=0 WHERE p.id=?`,mode,player);
@@ -253,10 +261,10 @@ export function createApi(catalog) {
         if(!post && path==="clip" && url.searchParams.has("v") && url.searchParams.get("v")!==q.clipKey) fail(409,"曲目已更换，请重新加载。");
         // Only the immediately upcoming audio may be buffered. Its timer and choices stay locked.
         if(!post && path==="clip" && !row.finished && idx===row.cursor+1 && questions[row.cursor].start){
-          return json({url:await preview(q.id)});
+          return json({url:await playablePreview(q.id)});
         }
         if(row.cursor!==idx || row.finished) fail(409,"本题已经结束，请回到当前题目。");
-        if(!post && path==="clip") return json({url:await preview(q.id)});
+        if(!post && path==="clip") return json({url:await playablePreview(q.id)});
         if(post && path==="next") return json(view(row,q));
         let result;
         let insertBest=false;
@@ -264,7 +272,7 @@ export function createApi(catalog) {
         if(post && path==="replace"){
           if(q.start) fail(409,"已经开始计时，无法换题。");
           const excluded=new Set(questions.flatMap(song=>[song.id,...(song.replacedIds || [])]));
-          const pool=row.mode==="hot" ? hotCatalog : catalog;
+          const {pool}=modes.get(row.mode);
           const choices=pool.filter(x=>!excluded.has(x.id));
           if(!choices.length) fail(409,"暂无替补题，请重试。");
           const recent=await recentSongIds(db,player,row.mode,id);
@@ -281,7 +289,7 @@ export function createApi(catalog) {
           if(!q.start || arrival<q.start || !Number.isInteger(body.choice) || body.choice < -1 || body.choice>3) fail(400,"本题尚未开始或答案无效。");
           const correctIndex=q.choices.indexOf(q.name);
           const sample=timing.get(id);
-          const credit=row.scoring_version===POINTS_VERSION && sample?.index===idx && sample.receivedAt<=arrival ? sample.creditMs : 0;
+          const credit=usesCompetitiveScoring(row.scoring_version) && sample?.index===idx && sample.receivedAt<=arrival ? sample.creditMs : 0;
           const networkCreditMs=Math.min(credit,arrival-q.start);
           const elapsedMs=arrival-q.start-networkCreditMs;
           const earned=earnedPoints(elapsedMs,body.choice===correctIndex,row.scoring_version);
@@ -295,7 +303,13 @@ export function createApi(catalog) {
           result=q.result={correctIndex,earned,score:row.score,correct:row.hits,done:!!row.finished,name:q.name,trackId:q.id,next,
             elapsedMs,choice:body.choice,outcome,...(networkCreditMs>0 ? {networkCreditMs} : {})};
           insertBest=!!row.finished;
-          if(insertBest) result.details=roundDetails(questions,row.scoring_version);
+          if(insertBest){
+            result.details=roundDetails(questions,row.scoring_version);
+            for(const detail of result.details){
+              const song=jayById.get(detail.trackId);
+              if(song) detail.songUrl="https://music.apple.com/tw/album/"+song.albumId+"?i="+song.id;
+            }
+          }
         }else fail(404,"没有此操作。");
         const updated=JSON.stringify(questions);
         const write=db.prepare("UPDATE games SET questions=?,cursor=?,score=?,hits=?,finished=?,updated=?,version=version+1 WHERE id=? AND version=?")
@@ -319,7 +333,7 @@ export function createApi(catalog) {
           if(path==="start") {
             result.serverNow=Date.now();
             result.processingMs=result.serverNow-arrival;
-            if(row.scoring_version===POINTS_VERSION){
+            if(usesCompetitiveScoring(row.scoring_version)){
               timing.delete(id);
               if(timing.size>=MAX_TIMING_ROUNDS) timing.delete(timing.keys().next().value);
               result.timingNonce=crypto.randomUUID();

@@ -1,5 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {createApi,earnedPoints} from "../server/api.mjs";
 import {localDb} from "../scripts/local-db.mjs";
 test("ranked scores drop after one second and earlier five-second rounds keep their rules",()=>{
@@ -265,4 +266,60 @@ test("hot rounds share player nicknames and keep independent progress and rankin
     }
     assert.equal(DB.prepare("SELECT COUNT(*) AS count FROM games WHERE mode='hot'").first().count,4);
   } finally {Date.now=originalTime;}
+});
+
+test("Jay rounds use their own songs and leaderboard with the competitive timing rules",async()=>{
+  const DB=localDb(":memory:");
+  const eason=Array.from({length:15},(_,i)=>({name:"Song "+i,id:i+1,offset:3,hot:true}));
+  const jay=JSON.parse(readFileSync(new URL("../db/jay-catalog.json",import.meta.url),"utf8"));
+  const byId=new Map(jay.map(song=>[song.id,song]));
+  const names=new Set(jay.map(song=>song.name));
+  const api=createApi(eason,jay);
+  const origin="https://quiz.example";
+  let cookie="";
+  const realNow=Date.now;
+  let now=realNow();
+  Date.now=()=>now;
+  async function send(path,body){
+    const response=await api(new Request(origin+"/api/"+path,{method:body?"POST":"GET",
+      headers:{Origin:origin,Cookie:cookie,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined}),{DB});
+    assert.equal(response.status,200,path);
+    return {data:await response.json(),cookie:response.headers.get("Set-Cookie")?.split(";")[0]};
+  }
+  try{
+    ({cookie}=await send("join",{nickname:"Jay Player"}));
+    const ranked=(await send("round",{mode:"ranked"})).data;
+    const hot=(await send("round",{mode:"hot"})).data;
+    const first=(await send("round",{mode:"jay"})).data;
+    assert.equal(new Set([first.round,ranked.round,hot.round]).size,3);
+    const initial={round:first.round,index:0};
+    const replaced=(await send("replace",initial)).data;
+    assert.notEqual(replaced.previewPath,first.previewPath);
+    assert.deepEqual((await send("round",{mode:"jay"})).data,replaced);
+    const questions=JSON.parse(DB.prepare("SELECT questions FROM games WHERE id=?").bind(first.round).first().questions);
+    assert.equal(new Set(questions.map(q=>q.id)).size,10);
+    assert.ok(questions.every(q=>byId.has(q.id) && q.choices.every(name=>names.has(name))));
+    const previewUrl=byId.get(questions[0].id).previewUrl;
+    assert.equal((await send(replaced.previewPath.slice(5))).data.url,previewUrl);
+    assert.equal((await send("preview?id="+questions[0].id)).data.url,previewUrl);
+    let result;
+    for(const [index,q] of questions.entries()){
+      const payload={round:first.round,index};
+      const start=(await send("start",payload)).data;
+      now=start.serverNow+400;
+      if(index===0) await send("timing",{...payload,nonce:start.timingNonce});
+      now=start.startAt+1200;
+      result=(await send("answer",{...payload,choice:start.choices.indexOf(q.name)})).data;
+      assert.equal(result.earned,index===0?10:9);
+    }
+    assert.equal(result.score,91);
+    assert.equal(result.details[1].msToNextPoint,200);
+    assert.match(result.details[1].songUrl,/^https:\/\/music\.apple\.com\//);
+    assert.deepEqual((await send("board?season=jay")).data.rows,[{nickname:"Jay Player",correct:10,score:91,rank:1}]);
+    for(const season of ["ranked","hot","weekly","five-second"]){
+      assert.equal((await send("board?season="+season)).data.mine,null);
+    }
+    assert.deepEqual((await send("round",{mode:"ranked"})).data,ranked);
+    assert.deepEqual((await send("round",{mode:"hot"})).data,hot);
+  } finally {Date.now=realNow;}
 });
