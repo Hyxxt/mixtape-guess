@@ -2,12 +2,12 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {createApi,earnedPoints} from "../server/api.mjs";
 import {localDb} from "../scripts/local-db.mjs";
-test("points keep a five-second full-score window and preserve old rounds' rules",()=>{
+test("ranked scores drop after one second and earlier five-second rounds keep their rules",()=>{
   for(let second=1;second<=10;second++){
-    const points=10-Math.max(0,second-5);
+    const points=11-second;
     assert.equal(earnedPoints(second*1000,true),points);
     assert.equal(earnedPoints((second-1)*1000+1,true),points);
-    assert.equal(earnedPoints(second*1000,true,1),11-second);
+    assert.equal(earnedPoints(second*1000,true,2),10-Math.max(0,second-5));
   }
   assert.equal(earnedPoints(-1,true),0);
   assert.equal(earnedPoints(0,true),10);
@@ -24,11 +24,12 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     const response=await api(new Request(origin+"/api/"+route,{method:body?"POST":"GET",headers:{Origin:origin,Cookie:cookie,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined}),{DB});
     return {status:response.status,data:await response.json(),cookie:response.headers.get("Set-Cookie")?.split(";")[0]};
   }
-  async function play(cookie,ms,version=2){
+  async function play(cookie,ms,version=1){
     let q=(await send("round",{},cookie)).data;
     const round=q.round; const picks=new Set();let outcome;
-    if(version===1){
-      DB.prepare("UPDATE games SET scoring_version=1 WHERE id=?").bind(round).run();
+    assert.equal(q.scoringVersion,1);
+    if(version===2){
+      DB.prepare("UPDATE games SET scoring_version=2 WHERE id=?").bind(round).run();
       q=(await send("round",{},cookie)).data;
     }
     for(let index=0;index<10;index++){
@@ -73,21 +74,24 @@ test("two guests see the same persisted rankings, with replay-safe answers and p
     const a=(await send("join",{nickname:"A"})).cookie;
     const b=(await send("join",{nickname:"B"})).cookie;
     assert.notEqual(a,b);
-    assert.equal(await play(a,4500),100);
-    assert.equal(await play(b,5260),90);
+    assert.equal(await play(a,950),100);
+    assert.equal(await play(b,1260),90);
     assert.equal(await play(a,11000),0);
     let board=(await send("board",null,b)).data;
     assert.deepEqual(board.rows.map(r=>[r.nickname,r.score,r.rank]),[["A",100,1],["B",90,2]]);
     assert.equal(board.mine.rank,2);
-    assert.equal(await play(b,5000),100);
+    assert.equal(await play(b,1000),100);
     board=(await send("board")).data;
     assert.deepEqual(board.rows.map(r=>r.rank),[1,1]);
     assert.equal(board.mine,null);
-    assert.equal(await play(a,1260,1),90);
-    const historical=(await send("board?season=legacy",null,a)).data;
+    assert.equal(await play(a,5260,2),90);
+    const historical=(await send("board?season=five-second",null,a)).data;
     assert.deepEqual(historical.rows.map(r=>[r.nickname,r.score,r.rank]),[["A",90,1]]);
     assert.equal(historical.mine.score,90);
     assert.equal((await send("board",null,a)).data.mine.score,100);
+    assert.deepEqual((await send("board?season=ranked")).data,board);
+    assert.deepEqual((await send("board?season=legacy")).data,board);
+    assert.deepEqual((await send("board?season=points",null,a)).data,historical);
   } finally {Date.now=originalTime;}
 });
 test("start lead follows reported RTT and stays idempotent",async()=>{

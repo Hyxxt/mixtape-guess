@@ -1,6 +1,7 @@
 const ROUND_SIZE = 10;
 const LIVE_MS = 2 * 60 * 60 * 1000;
-const POINTS_VERSION = 2;
+const POINTS_VERSION = 1;
+const FIVE_SECOND_VERSION = 2;
 const COOKIE = "eason_player_v1";
 const previewCache = new Map();
 const previewPending = new Map();
@@ -29,7 +30,7 @@ async function hash(value) {
 }
 export function earnedPoints(elapsed,correct,scoringVersion=POINTS_VERSION) {
   if(!correct || !Number.isFinite(elapsed) || elapsed<0 || elapsed>10000) return 0;
-  const fullPointsThrough=scoringVersion===1 ? 1 : 5;
+  const fullPointsThrough=scoringVersion===FIVE_SECOND_VERSION ? 5 : 1;
   return 10-Math.max(0,Math.ceil(elapsed/1000)-fullPointsThrough);
 }
 function makeQuestion(song, catalog) {
@@ -122,7 +123,9 @@ export function createApi(catalog) {
         return json({nickname:p?.nickname||null,count:catalog.length});
       }
       if(!post && path==="board"){
-        const version=url.searchParams.get("season")==="legacy" ? 1 : POINTS_VERSION;
+        const season=url.searchParams.get("season");
+        // The previous frontend used season=points for scores earned with the five-second rule.
+        const version=season==="five-second" || season==="points" ? FIVE_SECOND_VERSION : POINTS_VERSION;
         const ranking=standings(version);
         const [leaders,mine]=await Promise.all([
           db.prepare("SELECT * FROM ("+ranking+") ORDER BY rank,achieved,owner LIMIT 100").all(),

@@ -12,7 +12,7 @@ let mode = "ranked", phase = "home", nickname = "", question = null, clip = null
 let score = 0, correctCount = 0, streak = 0, picked = null, progress = 0, startedAt = 0;
 let timer, rafId = 0, barIndex = 0, generation = 0, nextPrepared = null, controller = new AbortController();
 let hotSongs, hotStartedAt = null, currentResult, lastFailure, modalVersion = 0;
-let activeAnswer, profileRequest, profileReady = false, scoringVersion = 2;
+let activeAnswer, profileRequest, profileReady = false, scoringVersion = 1;
 let advanceTimer, reviewHold = false, serverRtt = 0;
 
 const reviewDuration = 2400;
@@ -190,7 +190,7 @@ function reset() {
   activeAnswer = null;
   score = 0;
   correctCount = 0;
-  scoringVersion = 2;
+  scoringVersion = 1;
   streak = 0;
   progress = 0;
   startedAt = 0;
@@ -245,7 +245,7 @@ function setModeUI() {
     $(id).setAttribute("aria-pressed", String(mode === id));
   }
   $("modeTitle").textContent = modeLabel();
-  $("heroTagline").textContent = isRanked() ? "听十秒陈奕迅原唱，前 5 秒猜中得满分。" : "从陈奕迅代表热歌中抽 10 首，可暂停、重听。";
+  $("heroTagline").textContent = isRanked() ? "听十秒陈奕迅原唱，猜得越快，得分越高。" : "从陈奕迅代表热歌中抽 10 首，可暂停、重听。";
   $("startCta").textContent = startLabel();
   $("catalogCount").textContent = isRanked() ? $("catalogCount").dataset.total : String(hotPool.length);
   $("track").textContent = question ? "第 " + pad(question.index + 1) + " / " + roundSize + " 首" : "每局 " + roundSize + " 首";
@@ -268,7 +268,7 @@ function showHome() {
   $("status").textContent = "就绪";
   $("feedback").textContent = isRanked() ? "完成 10 题即可上榜。" : "热歌成绩保存在这台设备。";
   const samples = isRanked()
-    ? [["前 5 秒答对", "10 分"], ["第 6～10 秒答对", "9～5 分"], ["答错或超时", "0 分"], ["本局满分", "100 分"]]
+    ? [["前 1 秒答对", "10 分"], ["第 2～10 秒答对", "9～1 分"], ["答错或超时", "0 分"], ["本局满分", "100 分"]]
     : [["前 2 秒答对", "10 分"], ["之后每过 1 秒", "少 1 分"], ["答对最低得分", "1 分"], ["答错或跳过", "0 分"]];
   const lines = samples.map(([key, value]) => {
     const row = node("div", null, "logrow");
@@ -837,7 +837,7 @@ async function shareResult(status) {
 function showResults() {
   const line = node("div", String(score), "bigscore");
   line.append(node("small", " / 100 分"));
-  const season = scoringVersion === 1 ? "legacy" : "points";
+  const season = isRanked() ? (scoringVersion === 2 ? "five-second" : "ranked") : "hot";
   const base = "共 " + roundSize + " 题，答对 " + correctCount + " 题。";
   const details = node("p", base + (isRanked() ? "正在读取个人排名…" : ""));
   const shareStatus = node("p", null, "sharemsg");
@@ -846,7 +846,7 @@ function showResults() {
   const share = action("分享战绩", () => shareResult(shareStatus));
   share.classList.add("secondary");
   const parts = [line, details, shareStatus, share, action("再来一局", () => { closeDialog(); begin(); })];
-  if (isRanked()) parts.push(action("查看排行榜", () => showBoard(season)));
+  parts.push(action(isRanked() ? "查看排行榜" : "查看热歌榜", () => showBoard(season)));
   const version = showDialog(modeLabel() + "成绩", ...parts);
   if (isRanked()) {
     api("board?season=" + season).then(board => {
@@ -859,16 +859,36 @@ function showResults() {
   }
 }
 
-function showBoard(season = "points") {
+function leaderboardRow(rank, label, correct, points) {
+  const item = node("div", null, "logrow");
+  const right = node("span", null, "boardright");
+  right.append(node("small", correct + " / " + roundSize), node("strong", points + " 分"));
+  item.append(node("b", "#" + rank), node("span", label, "boardname"), right);
+  return item;
+}
+
+function showHotBoard(content) {
+  const rows = historyRows()
+    .filter(row => row.total === roundSize && Number.isInteger(row.score))
+    .sort((a, b) => b.score - a.score || b.right - a.right || a.time - b.time)
+    .slice(0, 10);
+  content.append(node("p", rows.length ? "本机热歌计时成绩 · 最高 10 局" : "本机还没有热歌计时成绩。"));
+  rows.forEach((row, index) => {
+    const date = new Date(row.time).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" });
+    content.append(leaderboardRow(index + 1, date, row.right, row.score));
+  });
+}
+
+function showBoard(season = "ranked") {
   const tabs = node("div", null, "boardTabs");
   tabs.setAttribute("role", "group");
   tabs.setAttribute("aria-label", "排行榜选择");
   const content = node("div");
   const status = node("p", "正在读取排行榜…");
   status.setAttribute("role", "status");
-  const version = showDialog("全站排行榜", tabs, status, content);
+  const version = showDialog("排行榜", tabs, status, content);
   let requestId = 0;
-  const choices = [["points", "积分榜"], ["legacy", "历史榜"]].map(([key, label]) => {
+  const choices = [["ranked", "积分榜"], ["hot", "热歌榜"], ["five-second", "历史榜"]].map(([key, label]) => {
     const button = action(label, () => loadBoard(key));
     tabs.append(button);
     return { key, button };
@@ -877,26 +897,28 @@ function showBoard(season = "points") {
   async function loadBoard(key) {
     const id = ++requestId;
     for (const entry of choices) entry.button.setAttribute("aria-pressed", String(key === entry.key));
+    content.replaceChildren();
+    if (key === "hot") {
+      status.hidden = true;
+      showHotBoard(content);
+      return;
+    }
     status.textContent = "正在读取排行榜…";
     status.hidden = false;
-    content.replaceChildren();
     try {
       const board = await api("board?season=" + key);
       if (version !== modalVersion || !modal.open || id !== requestId) return;
       status.hidden = true;
+      if (key === "five-second") content.append(node("p", "采用前 5 秒答对得 10 分规则的历史成绩。"));
       if (board.mine) content.append(node("p", "我的最高分 " + board.mine.score + " 分 · 第 " + board.mine.rank + " 名", "boardMine"));
       if (!board.rows.length) {
-        const message = key === "points" ? "完成一局积分挑战，就能成为首批上榜玩家。" : "历史榜暂无成绩。";
+        const message = key === "ranked" ? "完成一局积分挑战即可上榜。" : "历史榜暂无成绩。";
         content.append(node("p", message));
         return;
       }
-      content.append(node("p", "前 100 位 · 同分时答对更多者优先，两项相同则并列。"));
+      content.append(node("p", "全站前 100 位 · 同分时答对更多者优先，两项相同则并列。"));
       for (const row of board.rows) {
-        const item = node("div", null, "logrow");
-        const right = node("span", null, "boardright");
-        right.append(node("small", row.correct + " / " + roundSize), node("strong", row.score + " 分"));
-        item.append(node("b", "#" + row.rank), node("span", row.nickname, "boardname"), right);
-        content.append(item);
+        content.append(leaderboardRow(row.rank, row.nickname, row.correct, row.score));
       }
     } catch {
       if (version !== modalVersion || !modal.open || id !== requestId) return;
@@ -943,7 +965,7 @@ async function showHistory() {
 function showHelp() {
   showDialog(
     "玩法说明",
-    node("p", "积分模式每局 10 题，每题限时 10 秒。前 5 秒答对得 10 分，第 6 到 10 秒答对依次得 9 到 5 分。答错、放弃和超时均为 0 分。"),
+    node("p", "积分模式每局 10 题，每题限时 10 秒。前 1 秒答对得 10 分，第 2 到 10 秒答对依次得 9 到 1 分。答错、放弃和超时均为 0 分。"),
     node("p", "热歌模式每局 10 首。前 2 秒答对得 10 分，第 3 秒得 9 分，之后每过一秒少 1 分，答对最低得 1 分。暂停和重听期间会继续计分，成绩保存在本机。"),
     node("p", "按 1–4 或 A–D 选答案，空格播放、暂停或重听，Enter 进下一题。")
   );
