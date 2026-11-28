@@ -2,10 +2,10 @@ name: keepalive
 
 on:
   schedule:
-    # 只在 UTC 00:00–15:59（北京时间 08:00–23:59）每 10 分钟保活一次。
+    # 北京时间 08:00–24:00，每 5 分钟探测一次，避开整点。
     # 24/7 保活约 730 小时/月，会吃满 Render workspace 共享的 750 小时；
     # 夜间休眠，把额度留给其他作品。
-    - cron: "3-59/10 0-15 * * *"
+    - cron: "3-59/5 0-15 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -16,8 +16,15 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Ping the app
+        shell: bash
         run: |
-          code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 --retry 2 --retry-delay 5 \
-            https://caige-radio.onrender.com/api/health || true)
-          echo "HTTP $code"
-          [ "$code" = "200" ] || exit 1
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --connect-timeout 10 --max-time 50 \
+                https://caige-radio.onrender.com/api/health | jq -e '.ok == true' > /dev/null; then
+              echo "Health check passed (attempt $attempt)"
+              exit 0
+            fi
+            if [[ "$attempt" != 3 ]]; then sleep 5; fi
+          done
+          echo "The app did not return a healthy response" >&2
+          exit 1
